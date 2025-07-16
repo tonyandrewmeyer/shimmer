@@ -18,19 +18,10 @@ jobs:
 
     - uses: astral-sh/setup-uv@bd01e18f51369d5a26f1651c3cb451d3417e3bba  # v6.3.1
 
-    - run: uv sync
+    - run: uv tool install tox
 
-    - name: Run ruff linting
-      run: uvx ruff check src tests
-
-    - name: Check ruff formatting
-      run: uvx ruff format --check src tests
-
-    - name: Run ty
-      run: uvx ty check src tests
-
-    - name: Run safety
-      run: uvx safety check --json || true
+    - name: Lint
+      run: uv run tox -e lint
 
   test:
     runs-on: ubuntu-latest
@@ -57,12 +48,14 @@ jobs:
 
     - uses: astral-sh/setup-uv@bd01e18f51369d5a26f1651c3cb451d3417e3bba  # v6.3.1
 
+    - run: uv tool install tox
+
     - name: Run unit tests
       run: |
-        uvx pytest tests/ -m "not integration" --cov=shimmer --cov-report=xml --cov-report=term-missing -v
+        uv run tox -e unit
 
     - name: Run integration tests
       run: |
         export PEBBLE=/tmp/pebble-test
         mkdir -p $PEBBLE/layers
-        timeout 300 uvx pytest tests/ -m integration -v --tb=short
+        uv run tox -e unit
