@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "**" ]
+
+permissions: {}
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        persist-credentials: false
+
+    - uses: astral-sh/setup-uv@bd01e18f51369d5a26f1651c3cb451d3417e3bba  # v6.3.1
+          
+    - name: Run ruff linting
+      run: uvx ruff check src tests
+
+    - name: Check ruff formatting
+      run: uvx ruff format --check src tests
+
+    - name: Run ty
+      run: uvx ty check src tests
+
+    - name: Run safety
+      run: uvx safety check --json || true
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.8", "3.9", "3.10", "3.11", "3.12", "3.13"]
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        persist-credentials: false
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Install Pebble (for integration tests)
+      if: matrix.test-type == 'integration'
+      run: |
+        sudo snap install pebble
+        echo "/snap/bin" >> $GITHUB_PATH
+        /snap/bin/pebble version
+
+    - uses: astral-sh/setup-uv@bd01e18f51369d5a26f1651c3cb451d3417e3bba  # v6.3.1
+
+    - name: Run unit tests
+      run: |
+        uvx pytest tests/ -m "not integration" --cov=shimmer --cov-report=xml --cov-report=term-missing -v
+
+    - name: Run integration tests
+      run: |
+        export PEBBLE=/tmp/pebble-test
+        mkdir -p $PEBBLE/layers
+        timeout 300 uvx pytest tests/ -m integration -v --tb=short

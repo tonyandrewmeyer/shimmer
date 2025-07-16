@@ -1,0 +1,33 @@
+name: Publish
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions: {}
+
+jobs:
+  build-n-publish:
+    name: Build and Publish to PyPI
+    runs-on: ubuntu-latest
+    environment: publish-pypi
+    permissions:
+      id-token: write
+      attestations: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Setup Python
+        uses: actions/setup-python@v5
+      - name: Setup uv
+        uses: astral-sh/setup-uv@bd01e18f51369d5a26f1651c3cb451d3417e3bba  # v6.3.1
+      - name: Build
+        run: uvx --with=build python -m build
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: 'dist/*'
+      - name: Publish
+        uses: pypa/gh-action-pypi-publish@release/v1
