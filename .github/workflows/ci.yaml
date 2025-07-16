@@ -17,7 +17,9 @@ jobs:
         persist-credentials: false
 
     - uses: astral-sh/setup-uv@bd01e18f51369d5a26f1651c3cb451d3417e3bba  # v6.3.1
-          
+
+    - run: uv sync
+
     - name: Run ruff linting
       run: uvx ruff check src tests
 
