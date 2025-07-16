@@ -6,7 +6,6 @@ This script demonstrates how to use Shimmer as a drop-in replacement
 for ops.pebble.Client. It includes examples of common operations.
 """
 
-import pathlib
 import sys
 import time
 

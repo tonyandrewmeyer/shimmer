@@ -362,9 +362,10 @@ drwxr-xr-x  root  root       -  2024-02-26T12:58:31Z  bin
 
     def test_pull_text(self, mock_subprocess: Mock, client: PebbleCliClient):
         """Test pulling file as text."""
-        with patch("tempfile.NamedTemporaryFile") as mock_temp, patch(
-            "builtins.open", create=True
-        ) as mock_open:
+        with (
+            patch("tempfile.NamedTemporaryFile") as mock_temp,
+            patch("builtins.open", create=True) as mock_open,
+        ):
             mock_file = Mock()
             mock_file.name = "/tmp/test"
             mock_temp.return_value.__enter__.return_value = mock_file
@@ -379,9 +380,10 @@ drwxr-xr-x  root  root       -  2024-02-26T12:58:31Z  bin
 
     def test_pull_binary(self, mock_subprocess: Mock, client: PebbleCliClient):
         """Test pulling file as binary."""
-        with patch("tempfile.NamedTemporaryFile") as mock_temp, patch(
-            "builtins.open", create=True
-        ) as mock_open:
+        with (
+            patch("tempfile.NamedTemporaryFile") as mock_temp,
+            patch("builtins.open", create=True) as mock_open,
+        ):
             mock_file = Mock()
             mock_file.name = "/tmp/test"
             mock_temp.return_value.__enter__.return_value = mock_file

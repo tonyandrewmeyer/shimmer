@@ -15,7 +15,7 @@ import pathlib
 import subprocess
 import tempfile
 import time
-from typing import Generator
+from collections.abc import Generator
 
 import ops
 import pytest

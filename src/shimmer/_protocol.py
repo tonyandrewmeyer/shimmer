@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import datetime
 import urllib.request
-from typing import Any, BinaryIO, Iterable, Mapping, Protocol, TextIO, overload
+from collections.abc import Iterable, Mapping
+from typing import Any, BinaryIO, Protocol, TextIO, overload
 
 import ops
 

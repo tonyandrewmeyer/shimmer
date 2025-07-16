@@ -16,7 +16,8 @@ import signal
 import subprocess
 import tempfile
 import time
-from typing import Any, BinaryIO, Iterable, TextIO
+from collections.abc import Iterable
+from typing import Any, BinaryIO, TextIO
 
 import yaml
 
@@ -574,7 +575,7 @@ class PebbleCliClient:
                 stdin_content = stdin_content.encode()
             elif isinstance(stdin_content, bytes) and encoding:
                 stdin_content = stdin_content.decode(encoding)
-            assert isinstance(stdin_content, (str, bytes))
+            assert isinstance(stdin_content, (str | bytes))
 
         # Start the process
         full_cmd = [self.pebble_binary] + cmd
@@ -608,7 +609,7 @@ class PebbleCliClient:
         return ExecProcess(
             command=command,
             process=process,
-            stdin_content=stdin_content,
+            stdin_content=stdin_content,  # type: ignore
             encoding=encoding,
             combine_stderr=combine_stderr,
             timeout=timeout,

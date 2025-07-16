@@ -3,7 +3,7 @@ name = "pebble-shimmer"
 version = "1.0.0a1"
 description = "A drop-in replacement for ops.pebble.Client that uses the Pebble CLI"
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.12"
 authors = [
     {name = "Tony Meyer", email = "shimmer@aotearoa.dev"},
 ]
@@ -13,10 +13,6 @@ classifiers = [
     "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Topic :: Software Development :: Libraries :: Python Modules",
@@ -62,7 +58,7 @@ include = [
 # Ruff configuration
 [tool.ruff]
 line-length = 88
-target-version = "py38"
+target-version = "py312"
 src = ["src", "tests"]
 
 [tool.ruff.lint]
