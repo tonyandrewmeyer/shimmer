@@ -1,3 +1,7 @@
+# 2025-07-21
+
+Add get_change().
+
 # 2025-07-20
 
 Allow Python 3.11.

@@ -616,6 +616,13 @@ class PebbleCliClient:
         )
 
     # Change management
+    def get_change(self, change_id: ops.pebble.ChangeID) -> ops.pebble.Change:
+        changes = selg.get_changes()
+        for change in changes:
+            if change.id == change_id:
+                return change
+        raise ops.pebble.APIError(f"Could not find change {change_id}")
+
     def get_changes(
         self,
         select: ChangeState | None = None,
