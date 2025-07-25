@@ -17,7 +17,7 @@ import subprocess
 import tempfile
 import time
 from collections.abc import Iterable
-from typing import Any, BinaryIO, TextIO
+from typing import Any, BinaryIO, TextIO, overload
 
 import yaml
 
@@ -458,6 +458,12 @@ class PebbleCliClient:
 
         self._run_command(cmd)
 
+    @overload
+    def pull(self, path: str, *, encoding: None) -> BinaryIO: ...
+
+    @overload
+    def pull(self, path: str, *, encoding: str = "utf-8") -> TextIO: ...
+
     def pull(
         self,
         path: str,
@@ -515,6 +521,48 @@ class PebbleCliClient:
             tmp_file.flush()
             cmd.insert(1, tmp_file.name)
             self._run_command(cmd)
+
+    # Exec I/O is str if encoding is provided (the default)
+    @overload
+    def exec(
+        self,
+        command: list[str],
+        *,
+        service_context: str | None = None,
+        environment: dict[str, str] | None = None,
+        working_dir: str | None = None,
+        timeout: float | None = None,
+        user_id: int | None = None,
+        user: str | None = None,
+        group_id: int | None = None,
+        group: str | None = None,
+        stdin: str | TextIO | None = None,
+        stdout: TextIO | None = None,
+        stderr: TextIO | None = None,
+        encoding: str = "utf-8",
+        combine_stderr: bool = False,
+    ) -> ExecProcess[str]: ...
+
+    # Exec I/O is bytes if encoding is explicitly set to None
+    @overload
+    def exec(
+        self,
+        command: list[str],
+        *,
+        service_context: str | None = None,
+        environment: dict[str, str] | None = None,
+        working_dir: str | None = None,
+        timeout: float | None = None,
+        user_id: int | None = None,
+        user: str | None = None,
+        group_id: int | None = None,
+        group: str | None = None,
+        stdin: bytes | BinaryIO | None = None,
+        stdout: BinaryIO | None = None,
+        stderr: BinaryIO | None = None,
+        encoding: None = None,
+        combine_stderr: bool = False,
+    ) -> ExecProcess[bytes]: ...
 
     # Process execution
     def exec(
@@ -616,12 +664,18 @@ class PebbleCliClient:
         )
 
     # Change management
-    def get_change(self, change_id: ops.pebble.ChangeID) -> ops.pebble.Change:
-        changes = selg.get_changes()
+    def get_change(self, change_id: ChangeID) -> Change:
+        changes = self.get_changes()
         for change in changes:
             if change.id == change_id:
                 return change
-        raise ops.pebble.APIError(f"Could not find change {change_id}")
+        message = f"Could not find change {change_id}"
+        raise APIError(
+            body={"message": message},
+            code=404,
+            status="Command Failed",
+            message=message,
+        )
 
     def get_changes(
         self,
