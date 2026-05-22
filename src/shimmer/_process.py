@@ -43,14 +43,24 @@ class ExecProcess:
         if self._finished:
             return
 
+        # Use communicate() rather than wait() so that the stdout/stderr pipes
+        # are drained concurrently with the process running. Calling wait()
+        # before reading the pipes can deadlock: the child blocks writing once
+        # the OS pipe buffer (~64KB) fills, while the parent blocks in wait().
+        # communicate() also feeds stdin_content, which a plain wait() never
+        # does (a process reading stdin would otherwise hang).
         try:
-            self._process.wait(timeout=self._timeout)
+            stdout_data, stderr_data = self._process.communicate(
+                input=self._stdin_content, timeout=self._timeout
+            )
         except subprocess.TimeoutExpired as e:
             self._process.terminate()
             try:
                 self._process.wait(timeout=self._timeout)
             except subprocess.TimeoutExpired:
                 self._process.kill()
+            # Drain the pipes so the killed child can be reaped cleanly.
+            self._process.communicate()
             raise ops.pebble.TimeoutError(
                 f"Command {self.command} timed out after {self._timeout}s"
             ) from e
@@ -59,24 +69,17 @@ class ExecProcess:
         if self._process.returncode == 0:
             return
 
-        stdout_data = ""
-        stderr_data = ""
-
-        if self._process.stdout:
-            stdout_data = self._process.stdout.read()
-            if isinstance(stdout_data, bytes) and self._encoding:
+        if self._encoding:
+            if isinstance(stdout_data, bytes):
                 stdout_data = stdout_data.decode(self._encoding)
-
-        if self._process.stderr:
-            stderr_data = self._process.stderr.read()
-            if isinstance(stderr_data, bytes) and self._encoding:
+            if isinstance(stderr_data, bytes):
                 stderr_data = stderr_data.decode(self._encoding)
 
         raise ops.pebble.ExecError(
             command=self.command,
             exit_code=self._process.returncode,
-            stdout=stdout_data,  # type: ignore
-            stderr=stderr_data,  # type: ignore
+            stdout=stdout_data or "",
+            stderr=stderr_data or "",
         )
 
     def wait_output(self) -> tuple[str | bytes, str | bytes | None]:
