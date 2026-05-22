@@ -123,11 +123,14 @@ checks:
             stderr=subprocess.DEVNULL,
         )
 
-        # Wait for pebble to start.
-        max_attempts = 20
+        # Wait for pebble to start. Probe with a command that actually contacts
+        # the daemon (get_services hits the socket); get_system_info only runs
+        # `version --client`, which succeeds before the daemon is listening and
+        # would let tests race a not-yet-ready socket.
+        max_attempts = 60
         for attempt in range(max_attempts):
             try:
-                pebble_client.get_system_info()
+                pebble_client.get_services()
                 break
             except (ConnectionError, ops.pebble.APIError):
                 if attempt == max_attempts - 1:
