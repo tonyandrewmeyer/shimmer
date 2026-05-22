@@ -6,6 +6,7 @@ import datetime
 import inspect
 import io
 import json
+import os
 import subprocess
 from unittest.mock import Mock, patch
 
@@ -633,41 +634,71 @@ class TestPebbleCliClient:
         call_args = mock_subprocess.run.call_args[0][0]
         assert call_args == ["mock-pebble", "rm", "/path/file", "--recursive"]
 
+    def _pull_writes(self, mock_subprocess: Mock, content: bytes) -> dict:
+        """Make the mocked `pebble pull` write ``content`` to its target path.
+
+        ``pull`` runs ``pebble pull <src> <tmp>``; we write to that temp path
+        (the last CLI arg) so the returned handle reads real data. Captures the
+        temp path so the test can assert it is unlinked afterwards.
+        """
+        captured: dict = {}
+
+        def fake_run(cmd, **kwargs):
+            captured["path"] = cmd[-1]
+            with open(cmd[-1], "wb") as fh:
+                fh.write(content)
+            return Mock(returncode=0, stdout="", stderr="")
+
+        mock_subprocess.run.side_effect = fake_run
+        return captured
+
     def test_pull_text(self, mock_subprocess: Mock, client: PebbleCliClient):
-        """Test pulling file as text."""
-        with (
-            patch("tempfile.NamedTemporaryFile") as mock_temp,
-            patch("builtins.open", create=True) as mock_open,
-        ):
-            mock_file = Mock()
-            mock_file.name = "/tmp/test"
-            mock_temp.return_value.__enter__.return_value = mock_file
-            mock_file.read.return_value = "file content"
-            mock_file.write.return_value = None
-            mock_open.return_value.__enter__.return_value = mock_file
+        """pull() returns a readable text handle and cleans up the temp file."""
+        captured = self._pull_writes(mock_subprocess, b"file content")
 
-            result = client.pull("/path/file")
+        result = client.pull("/path/file")
 
-        assert isinstance(result, io.StringIO)
-        assert result.read() == "file content"
+        content = result.read()
+        assert content == "file content"
+        assert isinstance(content, str)
+        # The temp file is unlinked immediately; the handle still reads it.
+        assert not os.path.exists(captured["path"])
+        result.close()
 
     def test_pull_binary(self, mock_subprocess: Mock, client: PebbleCliClient):
-        """Test pulling file as binary."""
-        with (
-            patch("tempfile.NamedTemporaryFile") as mock_temp,
-            patch("builtins.open", create=True) as mock_open,
-        ):
-            mock_file = Mock()
-            mock_file.name = "/tmp/test"
-            mock_temp.return_value.__enter__.return_value = mock_file
-            mock_file.read.return_value = b"binary file content"
-            mock_file.write.return_value = None
-            mock_open.return_value.__enter__.return_value = mock_file
+        """pull(encoding=None) returns a readable binary handle."""
+        captured = self._pull_writes(mock_subprocess, b"binary file content")
 
-            result = client.pull("/path/file", encoding=None)
+        result = client.pull("/path/file", encoding=None)
 
-        assert isinstance(result, io.BytesIO)
-        assert result.read() == b"binary file content"
+        content = result.read()
+        assert content == b"binary file content"
+        assert isinstance(content, bytes)
+        assert not os.path.exists(captured["path"])
+        result.close()
+
+    def test_pull_missing_file_raises_path_error_and_cleans_up(
+        self, mock_subprocess: Mock, client: PebbleCliClient
+    ):
+        """A failed pull raises PathError and leaves no temp file behind."""
+        captured: dict = {}
+
+        def fake_run(cmd, **kwargs):
+            captured["path"] = cmd[-1]
+            # The real `pebble pull` removes the destination when it fails, so
+            # the cleanup path must tolerate the temp file already being gone.
+            os.unlink(cmd[-1])
+            raise subprocess.CalledProcessError(
+                1, "cmd", stderr="error: stat /path/file: no such file or directory"
+            )
+
+        mock_subprocess.run.side_effect = fake_run
+
+        with pytest.raises(ops.pebble.PathError) as exc_info:
+            client.pull("/path/file")
+
+        assert exc_info.value.kind == "not-found"
+        assert not os.path.exists(captured["path"])
 
     def test_push_string(self, mock_subprocess: Mock, client: PebbleCliClient):
         """Test pushing string content."""
