@@ -90,7 +90,7 @@ class PebbleClientProtocol(Protocol):
     def push(
         self,
         path: str,
-        source: ops.pebble._IOSource,  # type: ignore
+        source: ops.pebble._IOSource,
         *,
         encoding: str = "utf-8",
         make_dirs: bool = False,

@@ -49,14 +49,14 @@ class TestPebbleCliClient:
         client = PebbleCliClient(socket_path=socket_path)
 
         expected_pebble_dir = "/tmp/test"
-        assert client._env["PEBBLE"] == expected_pebble_dir  # type: ignore
-        assert client._env["PEBBLE_SOCKET"] == socket_path  # type: ignore
+        assert client._env["PEBBLE"] == expected_pebble_dir
+        assert client._env["PEBBLE_SOCKET"] == socket_path
 
     def test_run_command_success(self, mock_subprocess: Mock, client: PebbleCliClient):
         """Test successful command execution."""
         mock_subprocess.run.return_value.stdout = "success"
 
-        result = client._run_command(["test", "command"])  # type: ignore
+        result = client._run_command(["test", "command"])
 
         mock_subprocess.run.assert_called_once()
         assert result.stdout == "success"
@@ -67,7 +67,7 @@ class TestPebbleCliClient:
         """Test command execution with input data."""
         mock_subprocess.run.return_value.stdout = "success"
 
-        client._run_command(["test"], input_data="test input")  # type: ignore
+        client._run_command(["test"], input_data="test input")
 
         call_args = mock_subprocess.run.call_args
         assert call_args[1]["input"] == "test input"
@@ -77,7 +77,7 @@ class TestPebbleCliClient:
         mock_subprocess.run.side_effect = subprocess.TimeoutExpired("cmd", 5.0)
 
         with pytest.raises(ops.pebble.TimeoutError):
-            client._run_command(["test"])  # type: ignore
+            client._run_command(["test"])
 
     def test_run_command_api_error(
         self, mock_subprocess: Mock, client: PebbleCliClient
@@ -88,7 +88,7 @@ class TestPebbleCliClient:
         )
 
         with pytest.raises(ops.pebble.APIError) as exc_info:
-            client._run_command(["test"])  # type: ignore
+            client._run_command(["test"])
 
         err = exc_info.value
         # The "error:" prefix is stripped so the message matches the socket
@@ -147,7 +147,7 @@ class TestPebbleCliClient:
         )
 
         with pytest.raises(ops.pebble.APIError) as exc_info:
-            client._run_command(["test"])  # type: ignore
+            client._run_command(["test"])
 
         err = exc_info.value
         assert err.code == code
@@ -165,7 +165,7 @@ class TestPebbleCliClient:
         )
 
         with pytest.raises(ops.pebble.APIError) as exc_info:
-            client._run_command(["test"])  # type: ignore
+            client._run_command(["test"])
 
         assert "code 3" in exc_info.value.message
         assert exc_info.value.code == 500
@@ -177,7 +177,7 @@ class TestPebbleCliClient:
         mock_subprocess.run.side_effect = FileNotFoundError()
 
         with pytest.raises(ops.pebble.ConnectionError):
-            client._run_command(["test"])  # type: ignore
+            client._run_command(["test"])
 
     def test_get_system_info(self, mock_subprocess: Mock, client: PebbleCliClient):
         """Test getting system information."""
@@ -192,7 +192,7 @@ class TestPebbleCliClient:
             capture_output=True,
             text=True,
             timeout=5.0,
-            env=client._env,  # type: ignore
+            env=client._env,
             check=True,
         )
 
