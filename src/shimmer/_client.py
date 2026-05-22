@@ -10,6 +10,7 @@ from __future__ import annotations
 import datetime
 import fnmatch
 import io
+import json
 import os
 import pathlib
 import signal
@@ -24,7 +25,6 @@ import yaml
 # Import all the types and exceptions from ops.pebble for compatibility
 from ops.pebble import (
     APIError,
-    BasicIdentity,
     Change,
     ChangeID,
     ChangeState,
@@ -32,11 +32,9 @@ from ops.pebble import (
     CheckLevel,
     ConnectionError,
     FileInfo,
-    FileType,
     Identity,
     IdentityDict,
     Layer,
-    LocalIdentity,
     Notice,
     NoticesUsers,
     NoticeType,
@@ -110,6 +108,25 @@ class PebbleCliClient:
                 f"Pebble binary not found: {self.pebble_binary}"
             ) from e
 
+    def _run_json(
+        self,
+        cmd: list[str],
+        timeout: float | None = None,
+    ) -> Any:
+        """Run a read command with ``--format json`` and return parsed JSON.
+
+        The structured output emitted by Pebble's read commands matches the
+        wire format produced by the Pebble API, so the result can be passed
+        straight to the matching ``ops.pebble`` ``from_dict`` constructor. This
+        is both more robust and richer than scraping the human-readable tables
+        (which drop fields such as a change's kind, tasks, and error).
+        """
+        result = self._run_command([*cmd, "--format", "json"], timeout=timeout)
+        output = result.stdout.strip()
+        if not output:
+            return None
+        return json.loads(output)
+
     def get_system_info(self) -> SystemInfo:
         """Get system information."""
         result = self._run_command(["version", "--client"])
@@ -167,27 +184,13 @@ class PebbleCliClient:
 
     def get_services(self, names: Iterable[str] | None = None) -> list[ServiceInfo]:
         """Get service status information."""
-        filtered_names = set(names) if names else None
-        cmd = ["services", "--abs-time"]
-        result = self._run_command(cmd)
-        if result.stdout.strip() == "Plan has no services.":
+        cmd = ["services"]
+        if names:
+            cmd.extend(names)
+        data = self._run_json(cmd)
+        if not data:
             return []
-        # Output looks like:
-        # Service      Startup  Current  Since
-        # demo-server  enabled  active   2025-07-12T06:55:57Z
-        lines = result.stdout.strip().splitlines()[1:]
-        services: list[ServiceInfo] = []
-        for line in lines:
-            if not line.strip():
-                continue
-            parts = line.split()
-            if len(parts) < 4:
-                continue
-            service, startup, current, _ = parts
-            if filtered_names is not None and service not in filtered_names:
-                continue
-            services.append(ServiceInfo(name=service, startup=startup, current=current))
-        return services
+        return [ServiceInfo.from_dict(svc) for svc in data["services"].values()]
 
     def start_services(
         self,
@@ -302,21 +305,13 @@ class PebbleCliClient:
         cmd = ["checks"]
         if level:
             cmd.extend(["--level", level.value])
+        if names:
+            cmd.extend(names)
 
-        result = self._run_command(cmd)
-
-        checks = []
-        lines = result.stdout.strip().split("\n")
-        for line in lines[1:]:
-            if not line.strip():
-                continue
-            parts = line.split()
-            if len(parts) >= 3:
-                check_name = parts[0]
-                if names and check_name not in names:
-                    continue
-                checks.append(CheckInfo(check_name, parts[1], parts[2]))
-        return checks
+        data = self._run_json(cmd)
+        if not data:
+            return []
+        return [CheckInfo.from_dict(check) for check in data["checks"].values()]
 
     def start_checks(self, checks: Iterable[str]) -> list[str]:
         """Start checks."""
@@ -351,79 +346,18 @@ class PebbleCliClient:
         itself: bool = False,
     ) -> list[FileInfo]:
         """List files in a directory."""
-        cmd = ["ls", "--abs-time", "-l", path]
+        cmd = ["ls", path]
         if itself:
             cmd.append("-d")
 
-        result = self._run_command(cmd)
-        # Output looks like:
-        # drwxr-xr-x  root  root       -  2025-07-12T06:43:11Z  dev
-
-        files = []
-        lines = result.stdout.strip().split("\n")
-        for line in lines:
-            if not line.strip():
-                continue
-            parts = line.split(None, 6)
-            if len(parts) < 6:
-                continue
-            name = parts[-1]
-            if pattern and not fnmatch.fnmatch(name, pattern):
-                continue
-            permissions = self._permissions_to_int(parts[0][1:])
-            user = parts[1]
-            user_id = 0 if user == "root" else os.getuid()
-            group = parts[2]
-            group_id = 0 if group == "root" else os.getgid()
-            file_info = FileInfo(
-                path=path,
-                name=name,
-                type=FileType.DIRECTORY if parts[0].startswith("d") else FileType.FILE,
-                permissions=permissions,
-                user=user,
-                user_id=user_id,
-                group=group,
-                group_id=group_id,
-                size=self._human_size_to_int(parts[3]),
-                last_modified=datetime.datetime.fromisoformat(parts[4]),
-            )
-            files.append(file_info)
+        data = self._run_json(cmd)
+        files = [FileInfo.from_dict(entry) for entry in (data or {}).get("files", [])]
+        # ``pattern`` matches against entry names; Pebble's ls glob support only
+        # applies to the final path element, so filter here to match the
+        # ops.pebble.Client semantics exactly.
+        if pattern:
+            files = [f for f in files if fnmatch.fnmatch(f.name, pattern)]
         return files
-
-    @staticmethod
-    def _human_size_to_int(size: str) -> int | None:
-        """Convert human-readable size (e.g., '1K', '2M') to bytes."""
-        if size == "-":
-            return None
-        size = size.strip().upper()
-        if size.endswith("KB"):
-            return int(size[:-2]) * 1024
-        elif size.endswith("MB"):
-            return int(size[:-2]) * 1024 * 1024
-        elif size.endswith("GB"):
-            return int(size[:-2]) * 1024 * 1024 * 1024
-        elif size.endswith("B"):
-            return int(size[:-1])
-        else:
-            raise ValueError(f"Invalid size format: {size}")
-
-    @staticmethod
-    def _permissions_to_int(perm_string: str, /):
-        """Convert a permission string like 'rw-rw-r--' to an integer."""
-        if len(perm_string) != 9:
-            raise ValueError("Permission string must be exactly 9 characters")
-
-        result = 0
-        for i in range(0, 9, 3):
-            group_value = 0
-            if perm_string[i] == "r":
-                group_value += 4
-            if perm_string[i + 1] == "w":
-                group_value += 2
-            if perm_string[i + 2] == "x":
-                group_value += 1
-            result = (result << 3) | group_value
-        return result
 
     def make_dir(
         self,
@@ -668,17 +602,20 @@ class PebbleCliClient:
 
     # Change management
     def get_change(self, change_id: ChangeID) -> Change:
-        changes = self.get_changes()
-        for change in changes:
-            if change.id == change_id:
-                return change
-        message = f"Could not find change {change_id}"
-        raise APIError(
-            body={"message": message},
-            code=404,
-            status="Command Failed",
-            message=message,
-        )
+        # ``pebble tasks <id>`` returns the full change object (kind, tasks,
+        # error and timing included), so we get the complete change directly
+        # rather than scanning the whole list.
+        try:
+            data = self._run_json(["tasks", str(change_id)])
+        except APIError as e:
+            message = f"Could not find change {change_id}"
+            raise APIError(
+                body={"message": message},
+                code=404,
+                status="Command Failed",
+                message=message,
+            ) from e
+        return Change.from_dict(data)
 
     def get_changes(
         self,
@@ -686,57 +623,20 @@ class PebbleCliClient:
         service: str | None = None,
     ) -> list[Change]:
         """Get list of changes."""
-        cmd = ["changes", "--abs-time"]
-        if select:
-            cmd.extend(["--select", str(select)])
+        cmd = ["changes"]
+        if service:
+            cmd.append(service)
 
-        result = self._run_command(cmd)
-
-        # Parse changes output.
-        # Output looks like:
-        # ID   Status  Spawn                 Ready                 Summary
-        # 1    Error   2025-07-12T06:49:22Z  2025-07-12T06:50:52Z  Perform HTTP check "demo-health"
-        changes: list[Change] = []
-        lines = result.stdout.strip().splitlines()
-        if not lines or len(lines) < 2 or lines[0].strip() == "No changes.":
-            return changes
-
-        header = lines[0]
-        # Find column start indices by header.
-        columns = ["ID", "Status", "Spawn", "Ready", "Summary"]
-        col_starts: list[int | None] = []
-        for col in columns:
-            idx = header.find(col)
-            if idx == -1:
-                raise ValueError(f"Column '{col}' not found in header: {header}")
-            col_starts.append(idx)
-        # Add end index for easier slicing.
-        col_starts.append(None)
-
-        for line in lines[1:]:
-            if not line.strip():
-                continue
-            fields: list[str] = []
-            for i in range(len(columns)):
-                start = col_starts[i]
-                end = col_starts[i + 1]
-                value = (
-                    line[start:end].strip() if end is not None else line[start:].strip()
-                )
-                fields.append(value)
-            if len(fields) == 5:
-                change = Change(
-                    id=fields[0],
-                    kind="unknown",  # Kind is not available in CLI output
-                    tasks=[],  # Tasks are not available in CLI output
-                    ready=fields[0] in ("Done", "Error"),
-                    err=None,  # Error is not available in CLI output
-                    status=fields[1],
-                    spawn_time=datetime.datetime.fromisoformat(fields[2]),
-                    ready_time=None,
-                    summary=fields[4],
-                )
-            changes.append(change)
+        data = self._run_json(cmd)
+        if not data:
+            return []
+        changes = [Change.from_dict(change) for change in data["changes"]]
+        # The CLI always returns every change; apply the ``select`` filter here
+        # to match ops.pebble.Client semantics.
+        if select == ChangeState.READY:
+            changes = [c for c in changes if c.ready]
+        elif select == ChangeState.IN_PROGRESS:
+            changes = [c for c in changes if not c.ready]
         return changes
 
     def wait_change(
@@ -872,28 +772,13 @@ class PebbleCliClient:
 
     def get_identities(self) -> dict[str, Identity]:
         """Get all identities."""
-        cmd = ["identities"]
-        result = self._run_command(cmd)
-
-        identities = {}
-        lines = result.stdout.strip().split("\n")
-        if lines == ["No identities."]:
-            return identities
-
-        for line in lines[1:]:  # Skip header
-            if not line.strip():
-                continue
-
-            parts = line.split()
-            if len(parts) >= 2:
-                name = parts[0]
-                access = parts[1]
-                types = parts[2].split(",")
-                basic = BasicIdentity("*****") if "basic" in types else None
-                local = LocalIdentity(user_id=-1) if "local" in types else None
-                identities[name] = Identity(access, basic=basic, local=local)
-
-        return identities
+        data = self._run_json(["identities"])
+        if not data:
+            return {}
+        return {
+            name: Identity.from_dict(identity)
+            for name, identity in data["identities"].items()
+        }
 
     def replace_identities(
         self,

@@ -186,34 +186,66 @@ class TestPebbleCliClient:
 
     def test_get_services(self, mock_subprocess: Mock, client: PebbleCliClient):
         """Test getting services."""
-        text_output = """Service  Startup   Current  Since
-service1 enabled  active  2025-07-12T06:55:57Z
-service2 disabled inactive  2025-07-12T06:55:57Z"""
-        mock_subprocess.run.return_value.stdout = text_output
+        mock_subprocess.run.return_value.stdout = json.dumps(
+            {
+                "services": {
+                    "service1": {
+                        "name": "service1",
+                        "startup": "enabled",
+                        "current": "active",
+                        "current-since": "2025-07-12T06:55:57Z",
+                    },
+                    "service2": {
+                        "name": "service2",
+                        "startup": "disabled",
+                        "current": "inactive",
+                    },
+                }
+            }
+        )
 
         services = client.get_services()
 
         assert len(services) == 2
-        assert services[0].name == "service1"
-        assert services[0].startup == "enabled"
-        assert services[0].current == "active"
-        assert services[1].name == "service2"
-        assert services[1].startup == "disabled"
-        assert services[1].current == "inactive"
+        by_name = {svc.name: svc for svc in services}
+        assert by_name["service1"].startup == ops.pebble.ServiceStartup.ENABLED
+        assert by_name["service1"].current == ops.pebble.ServiceStatus.ACTIVE
+        assert by_name["service2"].startup == ops.pebble.ServiceStartup.DISABLED
+        assert by_name["service2"].current == ops.pebble.ServiceStatus.INACTIVE
+
+        call_args = mock_subprocess.run.call_args[0][0]
+        assert call_args == ["mock-pebble", "services", "--format", "json"]
 
     def test_get_services_filtered(
         self, mock_subprocess: Mock, client: PebbleCliClient
     ):
         """Test getting specific services by name."""
-        text_output = """Service  Startup   Current  Since
-service1 enabled  active  2025-07-12T06:55:57Z
-service2 disabled inactive  2025-07-12T06:55:57Z"""
-        mock_subprocess.run.return_value.stdout = text_output
+        # Pebble does the name filtering itself, so it only returns the match.
+        mock_subprocess.run.return_value.stdout = json.dumps(
+            {
+                "services": {
+                    "service1": {
+                        "name": "service1",
+                        "startup": "enabled",
+                        "current": "active",
+                    },
+                }
+            }
+        )
 
         services = client.get_services(names=["service1"])
 
         assert len(services) == 1
         assert services[0].name == "service1"
+
+        call_args = mock_subprocess.run.call_args[0][0]
+        assert call_args == [
+            "mock-pebble",
+            "services",
+            "service1",
+            "--format",
+            "json",
+        ]
 
     def test_start_services(self, mock_subprocess: Mock, client: PebbleCliClient):
         """Test starting services."""
@@ -268,29 +300,55 @@ service2 disabled inactive  2025-07-12T06:55:57Z"""
 
     def test_get_checks(self, mock_subprocess: Mock, client: PebbleCliClient):
         """Test getting check status."""
-        text_output = """Check     Level  Status
-check1    alive  up
-check2    ready  down"""
-        mock_subprocess.run.return_value.stdout = text_output
+        mock_subprocess.run.return_value.stdout = json.dumps(
+            {
+                "checks": {
+                    "check1": {
+                        "name": "check1",
+                        "level": "alive",
+                        "status": "up",
+                        "successes": 5,
+                        "failures": 0,
+                        "threshold": 3,
+                        "change-id": "1",
+                    },
+                    "check2": {
+                        "name": "check2",
+                        "level": "ready",
+                        "status": "down",
+                        "successes": 0,
+                        "failures": 3,
+                        "threshold": 3,
+                        "change-id": "2",
+                    },
+                }
+            }
+        )
 
         checks = client.get_checks()
 
         assert len(checks) == 2
-        assert checks[0].name == "check1"
-        assert checks[0].level == "alive"
-        assert checks[0].status == "up"
+        by_name = {check.name: check for check in checks}
+        assert by_name["check1"].level == ops.pebble.CheckLevel.ALIVE
+        assert by_name["check1"].status == ops.pebble.CheckStatus.UP
+        # The JSON format exposes the richer detail that text parsing dropped.
+        assert by_name["check1"].successes == 5
+        assert by_name["check1"].threshold == 3
+        assert by_name["check2"].failures == 3
+        assert by_name["check2"].status == ops.pebble.CheckStatus.DOWN
 
     def test_get_checks_with_level(
         self, mock_subprocess: Mock, client: PebbleCliClient
     ):
         """Test getting checks filtered by level."""
-        mock_subprocess.run.return_value.stdout = "Check Level Status\n"
+        mock_subprocess.run.return_value.stdout = json.dumps({"checks": {}})
 
         client.get_checks(level=ops.pebble.CheckLevel.ALIVE)
 
         call_args = mock_subprocess.run.call_args[0][0]
         assert "--level" in call_args
         assert "alive" in call_args
+        assert call_args[-2:] == ["--format", "json"]
 
     def test_start_checks(self, mock_subprocess: Mock, client: PebbleCliClient):
         """Test starting checks."""
@@ -310,36 +368,85 @@ check2    ready  down"""
 
     def test_list_files(self, mock_subprocess: Mock, client: PebbleCliClient):
         """Test listing files."""
-        text_output = """
-drwxr-xr-x  root  root       -  2024-02-26T12:58:31Z  bin
--rw-------  ubuntu  ubuntu   811kB  2025-07-12T09:15:20Z  .pebble.state
-""".strip()
-        mock_subprocess.run.return_value.stdout = text_output
+        mock_subprocess.run.return_value.stdout = json.dumps(
+            {
+                "files": [
+                    {
+                        "path": "/path/bin",
+                        "name": "bin",
+                        "type": "directory",
+                        "permissions": "755",
+                        "last-modified": "2024-02-26T12:58:31Z",
+                        "user-id": 0,
+                        "user": "root",
+                        "group-id": 0,
+                        "group": "root",
+                    },
+                    {
+                        "path": "/path/.pebble.state",
+                        "name": ".pebble.state",
+                        "type": "file",
+                        "size": 830464,
+                        "permissions": "600",
+                        "last-modified": "2025-07-12T09:15:20Z",
+                        "user-id": 1000,
+                        "user": "ubuntu",
+                        "group-id": 1000,
+                        "group": "ubuntu",
+                    },
+                ]
+            }
+        )
 
         files = client.list_files("/path")
 
         assert len(files) == 2
         assert files[0].name == "bin"
+        assert files[0].type == ops.pebble.FileType.DIRECTORY
         assert files[0].permissions == 0o755
         assert files[0].user == "root"
         assert files[0].group == "root"
         assert files[1].name == ".pebble.state"
         assert files[1].permissions == 0o0600
+        assert files[1].size == 830464
         assert files[1].user == "ubuntu"
         assert files[1].group == "ubuntu"
+        # The JSON format provides real numeric IDs (text output had none).
+        assert files[1].user_id == 1000
+        assert files[1].group_id == 1000
 
         call_args = mock_subprocess.run.call_args[0][0]
-        assert call_args == ["mock-pebble", "ls", "--abs-time", "-l", "/path"]
+        assert call_args == ["mock-pebble", "ls", "/path", "--format", "json"]
 
     def test_list_files_with_pattern(
         self, mock_subprocess: Mock, client: PebbleCliClient
     ):
         """Test listing files with pattern."""
-        text_output = """
-drwxr-xr-x  root  root       -  2024-02-26T12:58:31Z  bin
--rw-------  ubuntu  ubuntu   811kB  2025-07-12T09:15:20Z  .pebble.txt
-""".strip()
-        mock_subprocess.run.return_value.stdout = text_output
+        mock_subprocess.run.return_value.stdout = json.dumps(
+            {
+                "files": [
+                    {
+                        "path": "/path/bin",
+                        "name": "bin",
+                        "type": "directory",
+                        "permissions": "755",
+                        "last-modified": "2024-02-26T12:58:31Z",
+                        "user": "root",
+                        "group": "root",
+                    },
+                    {
+                        "path": "/path/.pebble.txt",
+                        "name": ".pebble.txt",
+                        "type": "file",
+                        "size": 12,
+                        "permissions": "600",
+                        "last-modified": "2025-07-12T09:15:20Z",
+                        "user": "ubuntu",
+                        "group": "ubuntu",
+                    },
+                ]
+            }
+        )
 
         files = client.list_files("/path", pattern="*.txt")
 
@@ -447,14 +554,48 @@ drwxr-xr-x  root  root       -  2024-02-26T12:58:31Z  bin
         assert "--user" in call_args
         assert "testuser" in call_args
 
+    @staticmethod
+    def _changes_json() -> str:
+        return json.dumps(
+            {
+                "changes": [
+                    {
+                        "id": "1",
+                        "kind": "perform-check",
+                        "summary": 'Perform HTTP check "demo-health"',
+                        "status": "Error",
+                        "tasks": [
+                            {
+                                "id": "1",
+                                "kind": "perform-check",
+                                "summary": 'Perform HTTP check "demo-health"',
+                                "status": "Error",
+                                "progress": {"label": "", "done": 1, "total": 1},
+                                "spawn-time": "2025-07-12T06:49:22Z",
+                                "ready-time": "2025-07-12T06:50:52Z",
+                            }
+                        ],
+                        "ready": True,
+                        "err": 'check "demo-health" failed',
+                        "spawn-time": "2025-07-12T06:49:22Z",
+                        "ready-time": "2025-07-12T06:50:52Z",
+                    },
+                    {
+                        "id": "2",
+                        "kind": "exec",
+                        "summary": 'Execute command "echo"',
+                        "status": "Doing",
+                        "tasks": [],
+                        "ready": False,
+                        "spawn-time": "2025-07-12T06:49:22Z",
+                    },
+                ]
+            }
+        )
+
     def test_get_changes(self, mock_subprocess: Mock, client: PebbleCliClient):
         """Test getting changes."""
-        text_output = """
-ID   Status  Spawn                 Ready                 Summary
-1    Error   2025-07-12T06:49:22Z  2025-07-12T06:50:52Z  Perform HTTP check "demo-health"
-2    Done    2025-07-12T06:49:22Z  2025-07-12T06:49:22Z  Execute command "echo"
-""".strip()
-        mock_subprocess.run.return_value.stdout = text_output
+        mock_subprocess.run.return_value.stdout = self._changes_json()
 
         changes = client.get_changes()
 
@@ -462,9 +603,77 @@ ID   Status  Spawn                 Ready                 Summary
         assert changes[0].id == "1"
         assert changes[0].status == "Error"
         assert changes[0].summary == 'Perform HTTP check "demo-health"'
+        # The JSON format restores fields the text parser had to fake.
+        assert changes[0].kind == "perform-check"
+        assert changes[0].err == 'check "demo-health" failed'
+        assert len(changes[0].tasks) == 1
+        assert changes[0].tasks[0].kind == "perform-check"
+        assert changes[0].ready_time is not None
         assert changes[1].id == "2"
-        assert changes[1].status == "Done"
+        assert changes[1].kind == "exec"
+        assert changes[1].status == "Doing"
         assert changes[1].summary == 'Execute command "echo"'
+
+        call_args = mock_subprocess.run.call_args[0][0]
+        assert call_args == ["mock-pebble", "changes", "--format", "json"]
+
+    def test_get_changes_select(self, mock_subprocess: Mock, client: PebbleCliClient):
+        """Test that the select filter is applied client-side."""
+        mock_subprocess.run.return_value.stdout = self._changes_json()
+        ready = client.get_changes(select=ops.pebble.ChangeState.READY)
+        assert [c.id for c in ready] == ["1"]
+
+        mock_subprocess.run.return_value.stdout = self._changes_json()
+        in_progress = client.get_changes(select=ops.pebble.ChangeState.IN_PROGRESS)
+        assert [c.id for c in in_progress] == ["2"]
+
+    def test_get_changes_for_service(
+        self, mock_subprocess: Mock, client: PebbleCliClient
+    ):
+        """Test that a service filter is passed through as a positional arg."""
+        mock_subprocess.run.return_value.stdout = json.dumps({"changes": []})
+        client.get_changes(service="demo-server")
+        call_args = mock_subprocess.run.call_args[0][0]
+        assert call_args == [
+            "mock-pebble",
+            "changes",
+            "demo-server",
+            "--format",
+            "json",
+        ]
+
+    def test_get_change(self, mock_subprocess: Mock, client: PebbleCliClient):
+        """Test getting a single change by ID via the tasks command."""
+        mock_subprocess.run.return_value.stdout = json.dumps(
+            {
+                "id": "2",
+                "kind": "exec",
+                "summary": 'Execute command "echo"',
+                "status": "Done",
+                "tasks": [
+                    {
+                        "id": "2",
+                        "kind": "exec",
+                        "summary": 'Execute command "echo"',
+                        "status": "Done",
+                        "progress": {"label": "", "done": 1, "total": 1},
+                        "spawn-time": "2025-07-12T06:49:22Z",
+                        "ready-time": "2025-07-12T06:49:23Z",
+                    }
+                ],
+                "ready": True,
+                "spawn-time": "2025-07-12T06:49:22Z",
+                "ready-time": "2025-07-12T06:49:23Z",
+            }
+        )
+
+        change = client.get_change(ops.pebble.ChangeID("2"))
+
+        assert change.id == "2"
+        assert change.kind == "exec"
+        assert len(change.tasks) == 1
+        call_args = mock_subprocess.run.call_args[0][0]
+        assert call_args == ["mock-pebble", "tasks", "2", "--format", "json"]
 
     def test_get_notices(self, mock_subprocess: Mock, client: PebbleCliClient):
         """Test getting notices."""
@@ -531,12 +740,19 @@ ID   User    Type           Key                    First                 Repeate
 
     def test_get_identities(self, mock_subprocess: Mock, client: PebbleCliClient):
         """Test getting identities."""
-        text_output = """
-Name     Access   Types
-alice    admin    basic
-bob      metrics  local
-charlie  read     basic,local""".strip()
-        mock_subprocess.run.return_value.stdout = text_output
+        mock_subprocess.run.return_value.stdout = json.dumps(
+            {
+                "identities": {
+                    "alice": {"access": "admin", "basic": {"password": "*****"}},
+                    "bob": {"access": "metrics", "local": {"user-id": 1000}},
+                    "charlie": {
+                        "access": "read",
+                        "basic": {"password": "*****"},
+                        "local": {"user-id": 1001},
+                    },
+                }
+            }
+        )
 
         identities = client.get_identities()
 
@@ -549,10 +765,13 @@ charlie  read     basic,local""".strip()
         assert identities["bob"].access == "metrics"
         assert identities["bob"].basic is None
         assert identities["bob"].local is not None
+        # The JSON format carries the real local user-id (text output faked it).
+        assert identities["bob"].local.user_id == 1000
         assert identities["charlie"].access == "read"
         assert identities["charlie"].basic is not None
         assert identities["charlie"].basic.password == "*****"
         assert identities["charlie"].local is not None
+        assert identities["charlie"].local.user_id == 1001
 
 
 class TestCompatibilityWithOpsPebble:

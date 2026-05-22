@@ -136,13 +136,17 @@ Other minor limitations:
 - `replan_services()`, `start_services()`, `stop_services()`, and `restart_services()` are only able to return the change ID if no timeout is set.
 - `notify()` only supports custom notices.
 - `get_notices()` cannot include the `last_occurred`, `last_data`, `repeat_after`, or `expire_after` fields
-- `get_changes()` cannot include the `kind`, `tasks`, `err`, `ready_time`, or `data` fields, and guesses at the `ready` field
 - `autostart_services()` is an alias for `replan()` (possibly we could fix this by getting the current state?)
 - `wait_change()` is yet to be implemented
 - `ack_warnings()` is yet to be implemented
 - `get_warnings()` is only implemented for the 'no warnings' case
-- `list_file()` looks up the user and group IDs locally, which is very likely to be wrong
-- `get_identities()` is unable to get the user ID for local identities
+
+`get_services()`, `get_checks()`, `list_files()`, `get_changes()`,
+`get_change()`, and `get_identities()` use Pebble's structured `--format json`
+output, so they return the same rich data as `ops.pebble.Client` (including
+change `kind`/`tasks`/`err`, check thresholds, real file ownership, and local
+identity user IDs). This requires a Pebble build that supports `--format` on
+read commands.
 
 ## Comparison with ops.pebble.Client
 

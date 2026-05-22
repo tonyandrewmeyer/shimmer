@@ -1,5 +1,16 @@
 # 2026-05-22
 
+Features:
+
+Use Pebble's structured `--format json` output for read commands
+(`get_services`, `get_checks`, `list_files`, `get_changes`, `get_change`,
+`get_identities`). This is more robust than scraping human-readable tables and
+restores information the text parser had to drop or guess: change `kind`,
+`tasks` and `err`; check `successes`/`failures`/`threshold`/`change_id`; real
+file `user_id`/`group_id`/`size`/`type`; and identity local `user_id`.
+
+Requires a Pebble build that supports `--format` on read commands.
+
 Bug fixes and packaging:
 
 - `get_warnings()` now correctly returns an empty list when there are no
