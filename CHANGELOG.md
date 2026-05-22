@@ -43,6 +43,11 @@ Bug fixes and packaging:
   (`{"type": "error", "status-code": ..., "result": {"message": ...}}`).
   Errors that can't be classified fall back to `500`. Code that branches on
   `APIError.code` (e.g. `== 404`) now works portably across both clients.
+- `abort_change()` now exists on `PebbleCliClient`, so the client implements
+  the full `ops.pebble.Client` surface (and its own `PebbleClientProtocol`).
+  The Pebble CLI exposes no command to abort a change, so it raises a clear
+  `NotImplementedError` explaining the limitation instead of failing with
+  `AttributeError`.
 
 # 2025-07-25
 
