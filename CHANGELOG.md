@@ -35,6 +35,14 @@ Bug fixes and packaging:
   reimplemented in terms of `communicate()`.
 - Ship a `py.typed` marker so downstream type checkers use Shimmer's types.
 - `__version__` is derived from the installed package metadata.
+- `APIError` raised on a CLI failure now mirrors `ops.pebble.Client`: `code`
+  is the inferred HTTP status (e.g. `404` for not-found, `400` for bad
+  requests) instead of the process exit code, `status` is the matching reason
+  phrase, `message` drops the CLI's `error:` prefix so it matches the daemon's
+  message verbatim, and `body` uses Pebble's wire format
+  (`{"type": "error", "status-code": ..., "result": {"message": ...}}`).
+  Errors that can't be classified fall back to `500`. Code that branches on
+  `APIError.code` (e.g. `== 404`) now works portably across both clients.
 
 # 2025-07-25
 
