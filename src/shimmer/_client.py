@@ -68,7 +68,10 @@ class PebbleCliClient:
         self.pebble_binary = pebble_binary
         self._env = os.environ.copy()
         if socket_path:
+            # Mirror the two environment variables the Pebble CLI honours: PEBBLE
+            # is the daemon directory and PEBBLE_SOCKET overrides the socket path.
             self._env["PEBBLE"] = str(pathlib.Path(socket_path).parent)
+            self._env["PEBBLE_SOCKET"] = socket_path
 
     def _run_command(
         self,
@@ -731,10 +734,12 @@ class PebbleCliClient:
         repeat_after: datetime.timedelta | None = None,
     ) -> str:
         """Record a notice."""
-        assert type.value == "custom", "Only custom notices are supported"
+        if type.value != "custom":
+            raise ValueError("Only custom notices are supported")
         cmd = ["notify"]
-        if repeat_after:
-            cmd.extend(["--repeat-after", str(repeat_after.total_seconds())])
+        if repeat_after is not None:
+            # Pebble expects a Go duration string (e.g. "1800s"), not bare seconds.
+            cmd.extend(["--repeat-after", f"{repeat_after.total_seconds()}s"])
         cmd.append(key)
         for name, value in (data or {}).items():
             cmd.extend([f"{name}={value}"])
@@ -753,11 +758,13 @@ class PebbleCliClient:
             cmd.extend(["--select", str(select)])
 
         result = self._run_command(cmd)
-        warnings: list[Warning] = []
-        if result == "No warnings.":
-            return warnings
+        output = result.stdout.strip()
+        if not output or output == "No warnings.":
+            return []
 
-        raise NotImplementedError
+        raise NotImplementedError(
+            "Parsing of non-empty warnings output is not yet implemented"
+        )
 
     def ack_warnings(self, timestamp: datetime.datetime) -> int:
         """Acknowledge warnings up to timestamp."""

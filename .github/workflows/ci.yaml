@@ -40,7 +40,6 @@ jobs:
         python-version: ${{ matrix.python-version }}
 
     - name: Install Pebble (for integration tests)
-      if: matrix.test-type == 'integration'
       run: |
         sudo snap install pebble
         echo "/snap/bin" >> $GITHUB_PATH
