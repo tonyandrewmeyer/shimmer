@@ -11,6 +11,7 @@ from unittest.mock import Mock, patch
 
 import ops
 import pytest
+import yaml
 from pytest_mock import MockerFixture
 
 from shimmer import ExecProcess, PebbleCliClient
@@ -195,6 +196,16 @@ class TestPebbleCliClient:
             env=client._env,
             check=True,
         )
+
+    def test_get_system_info_multiline_output(
+        self, mock_subprocess: Mock, client: PebbleCliClient
+    ):
+        """Only the first line of `version --client` output is used."""
+        mock_subprocess.run.return_value.stdout = "v1.2.3\nextra trailing line\n"
+
+        info = client.get_system_info()
+
+        assert info.version == "v1.2.3"
 
     def test_add_layer_string(self, mock_subprocess: Mock, client: PebbleCliClient):
         """Test adding a layer from string."""
@@ -830,6 +841,57 @@ class TestPebbleCliClient:
         assert call_args == ["mock-pebble", "tasks", "2", "--format", "json"]
 
     @staticmethod
+    def _change_json(*, ready: bool, change_id: str = "2") -> str:
+        """Build a `pebble tasks <id> --format json` document."""
+        return json.dumps(
+            {
+                "id": change_id,
+                "kind": "exec",
+                "summary": "Execute command",
+                "status": "Done" if ready else "Doing",
+                "tasks": [],
+                "ready": ready,
+                "spawn-time": "2025-07-12T06:49:22Z",
+                "ready-time": "2025-07-12T06:49:23Z" if ready else None,
+            }
+        )
+
+    def test_wait_change_returns_ready_change(
+        self, mock_subprocess: Mock, client: PebbleCliClient
+    ):
+        """wait_change returns immediately when the change is already ready."""
+        mock_subprocess.run.return_value.stdout = self._change_json(ready=True)
+
+        change = client.wait_change(ops.pebble.ChangeID("2"), timeout=10.0)
+
+        assert change.id == "2"
+        assert change.ready
+
+    def test_wait_change_timeout(self, mock_subprocess: Mock, client: PebbleCliClient):
+        """wait_change raises TimeoutError when the change never becomes ready."""
+        mock_subprocess.run.return_value.stdout = self._change_json(ready=False)
+
+        with pytest.raises(ops.pebble.TimeoutError, match="timed out"):
+            client.wait_change(ops.pebble.ChangeID("2"), timeout=0)
+
+    def test_wait_change_polls_until_ready(
+        self, mock_subprocess: Mock, client: PebbleCliClient
+    ):
+        """wait_change keeps polling until the change reports ready."""
+        not_ready = Mock(returncode=0, stderr="", stdout=self._change_json(ready=False))
+        is_ready = Mock(returncode=0, stderr="", stdout=self._change_json(ready=True))
+        mock_subprocess.run.side_effect = [not_ready, not_ready, is_ready]
+
+        with patch("shimmer._client.time.sleep") as mock_sleep:
+            change = client.wait_change(
+                ops.pebble.ChangeID("2"), timeout=10.0, delay=0.01
+            )
+
+        assert change.ready
+        assert mock_subprocess.run.call_count == 3
+        assert mock_sleep.call_count == 2
+
+    @staticmethod
     def _notice_yaml(
         id: str,
         *,
@@ -1008,6 +1070,64 @@ ID   User    Type           Key                    First                 Repeate
         assert identities["charlie"].basic.password == "*****"
         assert identities["charlie"].local is not None
         assert identities["charlie"].local.user_id == 1001
+
+    def _capture_from_file(self, mock_subprocess: Mock) -> dict:
+        """Make the mocked CLI capture the YAML written to its ``--from`` file.
+
+        ``replace_identities``/``remove_identities`` write a temp YAML file and
+        pass it via ``--from``; the file is deleted when the call returns, so we
+        read it back inside the mock to assert on its parsed contents.
+        """
+        captured: dict = {}
+
+        def fake_run(cmd, **kwargs):
+            path = cmd[cmd.index("--from") + 1]
+            with open(path) as f:
+                captured["data"] = yaml.safe_load(f)
+            return Mock(returncode=0, stdout="", stderr="")
+
+        mock_subprocess.run.side_effect = fake_run
+        return captured
+
+    def test_replace_identities(self, mock_subprocess: Mock, client: PebbleCliClient):
+        """replace_identities writes the identities as YAML and uses --replace."""
+        captured = self._capture_from_file(mock_subprocess)
+
+        client.replace_identities(
+            {"alice": {"access": "admin", "local": {"user-id": 1000}}}
+        )
+
+        cmd = mock_subprocess.run.call_args[0][0]
+        assert cmd[:3] == ["mock-pebble", "update-identities", "--from"]
+        assert cmd[-1] == "--replace"
+        assert captured["data"] == {
+            "identities": {"alice": {"access": "admin", "local": {"user-id": 1000}}}
+        }
+
+    def test_replace_identities_accepts_identity_objects(
+        self, mock_subprocess: Mock, client: PebbleCliClient
+    ):
+        """An Identity object is serialised via to_dict()."""
+        captured = self._capture_from_file(mock_subprocess)
+
+        identity = ops.pebble.Identity.from_dict(
+            {"access": "read", "local": {"user-id": 42}}
+        )
+        client.replace_identities({"bob": identity})
+
+        assert captured["data"]["identities"]["bob"]["access"] == "read"
+        assert captured["data"]["identities"]["bob"]["local"]["user-id"] == 42
+
+    def test_remove_identities(self, mock_subprocess: Mock, client: PebbleCliClient):
+        """remove_identities maps each name to null and replaces."""
+        captured = self._capture_from_file(mock_subprocess)
+
+        client.remove_identities(["alice", "bob"])
+
+        cmd = mock_subprocess.run.call_args[0][0]
+        assert cmd[:2] == ["mock-pebble", "update-identities"]
+        assert "--replace" in cmd
+        assert captured["data"] == {"identities": {"alice": None, "bob": None}}
 
 
 class TestCompatibilityWithOpsPebble:
