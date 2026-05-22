@@ -11,7 +11,7 @@ Shimmer provides `PebbleCliClient`, a class that implements the same interface a
 ### Install from PyPI
 
 ```bash
-uv pip install shimmer
+uv pip install pebble-shimmer
 ```
 
 ### Install development version

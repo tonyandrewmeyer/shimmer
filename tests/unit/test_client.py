@@ -48,6 +48,7 @@ class TestPebbleCliClient:
 
         expected_pebble_dir = "/tmp/test"
         assert client._env["PEBBLE"] == expected_pebble_dir  # type: ignore
+        assert client._env["PEBBLE_SOCKET"] == socket_path  # type: ignore
 
     def test_run_command_success(self, mock_subprocess: Mock, client: PebbleCliClient):
         """Test successful command execution."""
@@ -498,6 +499,36 @@ ID   User    Type           Key                    First                 Repeate
         assert notice_id == "90"
         call_args = mock_subprocess.run.call_args[0][0]
         assert call_args == ["mock-pebble", "notify", "test.example/key", "msg=test"]
+
+    def test_notify_repeat_after(self, mock_subprocess: Mock, client: PebbleCliClient):
+        """Test that repeat_after is rendered as a Pebble duration string."""
+        import datetime
+
+        mock_subprocess.run.return_value.stdout = "Recorded notice 91"
+
+        client.notify(
+            ops.pebble.NoticeType.CUSTOM,
+            "test.example/key",
+            repeat_after=datetime.timedelta(minutes=30),
+        )
+
+        call_args = mock_subprocess.run.call_args[0][0]
+        assert "--repeat-after" in call_args
+        # 30 minutes -> "1800.0s", a valid Go duration (not a bare "1800.0").
+        assert call_args[call_args.index("--repeat-after") + 1] == "1800.0s"
+
+    def test_notify_non_custom_raises_value_error(self, client: PebbleCliClient):
+        """Test that non-custom notice types raise ValueError (not AssertionError)."""
+        with pytest.raises(ValueError, match="Only custom notices are supported"):
+            client.notify(ops.pebble.NoticeType.CHANGE_UPDATE, "some-key")
+
+    def test_get_warnings_empty(self, mock_subprocess: Mock, client: PebbleCliClient):
+        """Test that the no-warnings case returns an empty list."""
+        mock_subprocess.run.return_value.stdout = "No warnings.\n"
+        assert client.get_warnings() == []
+
+        mock_subprocess.run.return_value.stdout = ""
+        assert client.get_warnings() == []
 
     def test_get_identities(self, mock_subprocess: Mock, client: PebbleCliClient):
         """Test getting identities."""
