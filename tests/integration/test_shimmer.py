@@ -29,10 +29,18 @@ def get_pebble_binary() -> str | None:
     candidates = ["pebble", "/snap/bin/pebble"]
     for binary in candidates:
         try:
-            result = subprocess.run([binary, "version"], capture_output=True, timeout=5)
+            # Use --client: a plain `pebble version` does a server check that
+            # blocks for ~5s when no daemon is running.
+            result = subprocess.run(
+                [binary, "version", "--client"], capture_output=True, timeout=10
+            )
             if result.returncode == 0:
                 return binary
-        except (FileNotFoundError, subprocess.CalledProcessError):
+        except (
+            FileNotFoundError,
+            subprocess.CalledProcessError,
+            subprocess.TimeoutExpired,
+        ):
             continue
 
 
@@ -44,7 +52,7 @@ def pebble_binary() -> str:
     """Get pebble binary path for the session."""
     pebble = get_pebble_binary()
     if not pebble:
-        pytest.skip("Pebble binary not available")
+        pytest.skip("Pebble binary not available")  # type: ignore
         return ""
     return pebble
 
@@ -208,8 +216,11 @@ class TestServiceManagement:
                 test_service = service
                 break
         assert test_service is not None
-        assert test_service.startup == "disabled"
-        assert test_service.current in ["inactive", "active"]
+        assert test_service.startup == ops.pebble.ServiceStartup.DISABLED
+        assert test_service.current in [
+            ops.pebble.ServiceStatus.INACTIVE,
+            ops.pebble.ServiceStatus.ACTIVE,
+        ]
 
     @pytest.mark.skip(reason="wait_change not implemented yet")
     def test_service_lifecycle(self, running_pebble: PebbleCliClient):
@@ -366,7 +377,10 @@ class TestHealthChecks:
                 break
 
         assert test_check is not None
-        assert test_check.level in ["alive", "ready"]
+        assert test_check.level in [
+            ops.pebble.CheckLevel.ALIVE,
+            ops.pebble.CheckLevel.READY,
+        ]
 
     def test_check_lifecycle(self, running_pebble: PebbleCliClient):
         """Test starting and stopping checks."""
@@ -498,8 +512,8 @@ class TestPerformance:
 # Utility functions for integration tests
 def create_test_layer(
     name: str,
-    services: ops.pebble.ServiceDict,
-    checks: ops.pebble.CheckDict | None = None,
+    services: dict[str, ops.pebble.ServiceDict],
+    checks: dict[str, ops.pebble.CheckDict] | None = None,
 ) -> str:
     """Create a test layer YAML string."""
     layer: ops.pebble.LayerDict = {
