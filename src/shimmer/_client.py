@@ -17,8 +17,8 @@ import signal
 import subprocess
 import tempfile
 import time
-from collections.abc import Iterable
-from typing import Any, BinaryIO, TextIO, overload
+from collections.abc import Iterable, Mapping
+from typing import Any, BinaryIO, NoReturn, TextIO, overload
 
 import yaml
 
@@ -30,6 +30,7 @@ from ops.pebble import (
     ChangeState,
     CheckInfo,
     CheckLevel,
+    CheckStatus,
     ConnectionError,
     FileInfo,
     Identity,
@@ -38,8 +39,10 @@ from ops.pebble import (
     Notice,
     NoticesUsers,
     NoticeType,
+    PathError,
     Plan,
     ServiceInfo,
+    ServiceStartup,
     SystemInfo,
     TimeoutError,
     Warning,
@@ -179,6 +182,21 @@ class PebbleCliClient:
         result = self._run_command(["plan"])
         return Plan(yaml.safe_load(result.stdout))
 
+    def _run_change_command(self, cmd: list[str], timeout: float) -> ChangeID:
+        """Run a change-producing command and return its real change ID.
+
+        ``pebble`` only prints the change ID when invoked with ``--no-wait``
+        (when it waits, it prints nothing). To match ops.pebble.Client -- which
+        always returns the real change ID -- we always pass ``--no-wait`` to
+        capture the ID, then wait for the change ourselves when the caller asked
+        us to (``timeout`` greater than zero).
+        """
+        result = self._run_command([*cmd, "--no-wait"])
+        change_id = ChangeID(result.stdout.strip())
+        if timeout:
+            self.wait_change(change_id, timeout=timeout)
+        return change_id
+
     def replan_services(
         self,
         *,
@@ -188,16 +206,7 @@ class PebbleCliClient:
         """Replan services."""
         if delay is not None:
             time.sleep(delay)
-
-        cmd = ["replan"]
-        if timeout == 0:
-            cmd.append("--no-wait")
-
-        result = self._run_command(cmd)
-        # We only get the change ID if using --no-wait.
-        if timeout == 0:
-            return ChangeID(result.stdout.strip())
-        return ChangeID("?")
+        return self._run_change_command(["replan"], timeout)
 
     def get_services(self, names: Iterable[str] | None = None) -> list[ServiceInfo]:
         """Get service status information."""
@@ -223,16 +232,7 @@ class PebbleCliClient:
         service_list = list(services)
         if not service_list:
             raise ValueError("services list cannot be empty")
-
-        cmd = ["start"] + service_list
-        if timeout == 0:
-            cmd.append("--no-wait")
-
-        result = self._run_command(cmd)
-        # We only get the change ID if using --no-wait.
-        if timeout == 0:
-            return ChangeID(result.stdout.strip())
-        return ChangeID("?")
+        return self._run_change_command(["start", *service_list], timeout)
 
     def stop_services(
         self,
@@ -248,16 +248,7 @@ class PebbleCliClient:
         service_list = list(services)
         if not service_list:
             raise ValueError("services list cannot be empty")
-
-        cmd = ["stop"] + service_list
-        if timeout == 0:
-            cmd.append("--no-wait")
-
-        result = self._run_command(cmd)
-        # We only get the change ID if using --no-wait.
-        if timeout == 0:
-            return ChangeID(result.stdout.strip())
-        return ChangeID("?")
+        return self._run_change_command(["stop", *service_list], timeout)
 
     def restart_services(
         self,
@@ -273,16 +264,7 @@ class PebbleCliClient:
         service_list = list(services)
         if not service_list:
             raise ValueError("services list cannot be empty")
-
-        cmd = ["restart"] + service_list
-        if timeout == 0:
-            cmd.append("--no-wait")
-
-        result = self._run_command(cmd)
-        # We only get the change ID if using --no-wait.
-        if timeout == 0:
-            return ChangeID(result.stdout.strip())
-        return ChangeID("?")
+        return self._run_change_command(["restart", *service_list], timeout)
 
     def autostart_services(
         self,
@@ -291,7 +273,24 @@ class PebbleCliClient:
         delay: float | None = None,
     ) -> ChangeID:
         """Start all startup-enabled services."""
-        # There's no direct CLI equivalent, use replan which starts enabled services.
+        # There's no direct CLI equivalent; `replan` starts enabled services.
+        # ops.pebble.Client's autostart raises "no default services" when no
+        # service is startup-enabled, but `replan` succeeds silently in that
+        # case -- so reproduce the error to stay API-compatible.
+        plan = self.get_plan()
+        enabled = [
+            name
+            for name, service in plan.services.items()
+            if service.startup == ServiceStartup.ENABLED.value
+        ]
+        if not enabled:
+            message = "no default services"
+            raise APIError(
+                body={"message": message},
+                code=400,
+                status="Bad Request",
+                message=message,
+            )
         return self.replan_services(timeout=timeout, delay=delay)
 
     def send_signal(
@@ -335,31 +334,71 @@ class PebbleCliClient:
             return []
         return [CheckInfo.from_dict(check) for check in data["checks"].values()]
 
+    def _inactive_checks(self, names: list[str]) -> set[str]:
+        """Names (from ``names``) whose check is currently inactive."""
+        return {
+            check.name
+            for check in self.get_checks(names=names)
+            if check.status == CheckStatus.INACTIVE
+        }
+
     def start_checks(self, checks: Iterable[str]) -> list[str]:
-        """Start checks."""
+        """Start checks, returning those whose state actually changed.
+
+        Like ops.pebble.Client, checks that were already running are not
+        included in the result.
+        """
         check_list = list(checks)
         if not check_list:
             raise ValueError("checks list cannot be empty")
 
-        cmd = ["start-checks"] + check_list
-        self._run_command(cmd)
-
-        # Return list of started checks (assume all were started)
-        return check_list
+        # Only inactive checks transition to running, so they are the ones the
+        # API reports as changed.
+        was_inactive = self._inactive_checks(check_list)
+        self._run_command(["start-checks", *check_list])
+        return [name for name in check_list if name in was_inactive]
 
     def stop_checks(self, checks: Iterable[str]) -> list[str]:
-        """Stop checks."""
+        """Stop checks, returning those whose state actually changed.
+
+        Like ops.pebble.Client, checks that were already inactive are not
+        included in the result.
+        """
         check_list = list(checks)
         if not check_list:
             raise ValueError("checks list cannot be empty")
 
-        cmd = ["stop-checks"] + check_list
-        self._run_command(cmd)
-
-        # Return list of stopped checks (assume all were stopped)
-        return check_list
+        # Only running checks transition to inactive, so they are the ones the
+        # API reports as changed.
+        was_inactive = self._inactive_checks(check_list)
+        self._run_command(["stop-checks", *check_list])
+        return [name for name in check_list if name not in was_inactive]
 
     # File operations
+    @staticmethod
+    def _raise_path_error(error: APIError) -> NoReturn:
+        """Translate a file-operation APIError into a PathError.
+
+        ops.pebble.Client raises PathError (not APIError) when a file operation
+        fails because of the path itself. We classify the CLI's error text into
+        the same ``kind`` values the API uses; anything that isn't a path error
+        (e.g. a connection failure) is re-raised unchanged.
+        """
+        text = (error.message or "").lower()
+        if "no such file" in text or "does not exist" in text:
+            kind = "not-found"
+        elif "permission denied" in text:
+            kind = "permission-denied"
+        elif (
+            "not a directory" in text
+            or "is a directory" in text
+            or "already exists" in text
+        ):
+            kind = "generic"
+        else:
+            raise error
+        raise PathError(kind, error.message) from error
+
     def list_files(
         self,
         path: str,
@@ -372,7 +411,10 @@ class PebbleCliClient:
         if itself:
             cmd.append("-d")
 
-        data = self._run_json(cmd)
+        try:
+            data = self._run_json(cmd)
+        except APIError as e:
+            self._raise_path_error(e)
         files = [FileInfo.from_dict(entry) for entry in (data or {}).get("files", [])]
         # ``pattern`` matches against entry names; Pebble's ls glob support only
         # applies to the final path element, so filter here to match the
@@ -407,7 +449,10 @@ class PebbleCliClient:
         elif group_id is not None:
             cmd.extend(["--gid", str(group_id)])
 
-        self._run_command(cmd)
+        try:
+            self._run_command(cmd)
+        except APIError as e:
+            self._raise_path_error(e)
 
     def remove_path(self, path: str, *, recursive: bool = False) -> None:
         """Remove a file or directory."""
@@ -415,7 +460,10 @@ class PebbleCliClient:
         if recursive:
             cmd.append("--recursive")
 
-        self._run_command(cmd)
+        try:
+            self._run_command(cmd)
+        except APIError as e:
+            self._raise_path_error(e)
 
     @overload
     def pull(self, path: str, *, encoding: None) -> BinaryIO: ...
@@ -433,7 +481,10 @@ class PebbleCliClient:
         with tempfile.NamedTemporaryFile() as tmp_file:
             tmp_file.close()
             cmd = ["pull", path, tmp_file.name]
-            self._run_command(cmd)
+            try:
+                self._run_command(cmd)
+            except APIError as e:
+                self._raise_path_error(e)
             if encoding is None:
                 with open(tmp_file.name, "rb") as tmp_file:
                     return io.BytesIO(tmp_file.read())
@@ -479,7 +530,10 @@ class PebbleCliClient:
             tmp_file.write(content)
             tmp_file.flush()
             cmd.insert(1, tmp_file.name)
-            self._run_command(cmd)
+            try:
+                self._run_command(cmd)
+            except APIError as e:
+                self._raise_path_error(e)
 
     # Exec I/O is str if encoding is provided (the default)
     @overload
@@ -641,10 +695,14 @@ class PebbleCliClient:
 
     def get_changes(
         self,
-        select: ChangeState | None = None,
+        select: ChangeState = ChangeState.IN_PROGRESS,
         service: str | None = None,
     ) -> list[Change]:
-        """Get list of changes."""
+        """Get list of changes.
+
+        ``select`` defaults to ``ChangeState.IN_PROGRESS`` to match
+        ops.pebble.Client (which returns only in-progress changes by default).
+        """
         cmd = ["changes"]
         if service:
             cmd.append(service)
@@ -664,12 +722,25 @@ class PebbleCliClient:
     def wait_change(
         self,
         change_id: ChangeID,
-        *,
-        timeout: float | None = None,
+        timeout: float | None = 30.0,
         delay: float = 0.1,
     ) -> Change:
-        """Wait for a change to be ready."""
-        raise NotImplementedError
+        """Wait for a change to be ready, polling until it completes.
+
+        Mirrors ops.pebble.Client.wait_change: returns the ready change, or
+        raises ops.pebble.TimeoutError if it is not ready within ``timeout``
+        seconds (``timeout=None`` waits indefinitely).
+        """
+        deadline = None if timeout is None else time.monotonic() + timeout
+        while True:
+            change = self.get_change(change_id)
+            if change.ready:
+                return change
+            if deadline is not None and time.monotonic() >= deadline:
+                raise TimeoutError(
+                    f"timed out waiting for change {change_id} ({timeout} seconds)"
+                )
+            time.sleep(delay)
 
     def get_notices(
         self,
@@ -749,27 +820,32 @@ class PebbleCliClient:
         # The output looks like: "Recorded notice 38"
         return result.stdout.strip().split()[-1]
 
+    # Warnings are deprecated in Pebble: the warnings API endpoint has been
+    # removed (warnings are now surfaced as notices), and the `pebble okay` CLI
+    # has stateful, timestamp-free semantics that cannot reproduce
+    # ops.pebble.Client's by-timestamp acknowledgement. Rather than return a
+    # silently-empty list or a misleading count, shimmer reports clearly that
+    # warnings are unsupported. Use the notices methods instead.
+    _WARNINGS_UNSUPPORTED = (
+        "Pebble has deprecated warnings (the warnings API has been removed and "
+        "warnings are now surfaced as notices), so shimmer does not support "
+        "{method}. Use get_notices()/get_notice() instead."
+    )
+
     def get_warnings(
         self,
-        select: WarningState | None = None,
+        select: WarningState = WarningState.PENDING,
     ) -> list[Warning]:
-        """Get warnings."""
-        cmd = ["warnings"]
-        if select:
-            cmd.extend(["--select", str(select)])
-
-        result = self._run_command(cmd)
-        output = result.stdout.strip()
-        if not output or output == "No warnings.":
-            return []
-
+        """Unsupported: warnings are deprecated in Pebble (see get_notices)."""
         raise NotImplementedError(
-            "Parsing of non-empty warnings output is not yet implemented"
+            self._WARNINGS_UNSUPPORTED.format(method="get_warnings()")
         )
 
     def ack_warnings(self, timestamp: datetime.datetime) -> int:
-        """Acknowledge warnings up to timestamp."""
-        raise NotImplementedError
+        """Unsupported: warnings are deprecated in Pebble (see get_notices)."""
+        raise NotImplementedError(
+            self._WARNINGS_UNSUPPORTED.format(method="ack_warnings()")
+        )
 
     def get_identities(self) -> dict[str, Identity]:
         """Get all identities."""
@@ -783,7 +859,7 @@ class PebbleCliClient:
 
     def replace_identities(
         self,
-        identities: dict[str, IdentityDict | Identity | None],
+        identities: Mapping[str, IdentityDict | Identity | None],
     ):
         """Replace identities."""
         identity_data = {}
