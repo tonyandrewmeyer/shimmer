@@ -1,6 +1,6 @@
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.5.0
+    rev: v5.0.0
     hooks:
       - id: trailing-whitespace
         exclude: ^tests/fixtures/
@@ -14,29 +14,46 @@ repos:
       - id: check-merge-conflict
       - id: debug-statements
       - id: check-docstring-first
+      - id: detect-private-key
 
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.1.9
-    hooks:
-      - id: ruff
-        args: [--fix, --exit-non-zero-on-fix]
-      - id: ruff-format
-
+  # Local hooks run the tools through `uv run`, so the versions come from
+  # pyproject.toml's `dev` extra rather than from pinned `rev:`s here. This
+  # keeps pre-commit, tox and CI on exactly the same tool versions.
   - repo: local
     hooks:
-      - id: pyright
-        name: pyright
-        entry: pyright
+      - id: ruff-check
+        name: ruff check
+        entry: uv run --extra dev -- ruff check --fix --exit-non-zero-on-fix
         language: system
         types: [python]
         require_serial: true
+
+      - id: ruff-format
+        name: ruff format
+        entry: uv run --extra dev -- ruff format
+        language: system
+        types: [python]
+        require_serial: true
+
+      - id: ty
+        name: ty
+        entry: uv run --extra dev -- ty check src tests
+        language: system
+        types: [python]
         pass_filenames: false
+        require_serial: true
+
+      - id: zizmor
+        name: zizmor
+        entry: uvx zizmor@v1.11.0
+        language: system
+        files: ^\.github/workflows/.*\.ya?ml$
+        require_serial: true
 
       - id: pytest-unit
         name: pytest unit tests
-        entry: pytest
+        entry: uv run --extra dev -- pytest -m "not integration" --maxfail=1 -q
         language: system
-        args: [tests/, --maxfail=1, -x, -q]
         types: [python]
         pass_filenames: false
         stages: [pre-push]

@@ -4,7 +4,7 @@
 
 ```bash
 # Clone repository
-git clone https://github.com/tonyandewmeyer/shimmer
+git clone https://github.com/tonyandrewmeyer/shimmer
 cd shimmer
 
 # Install with development dependencies
@@ -46,19 +46,16 @@ export PEBBLE_BINARY=/snap/bin/pebble
 
 ### Debugging Integration Tests
 
+Integration tests live under `tests/integration/`.
+
 **Verbose Output:**
 ```bash
-pytest tests/test_integration.py -v -s --tb=long
+pytest tests/integration/ -v -s --tb=long
 ```
 
-**Keep Test Environment:**
+**Debug a Specific Test:**
 ```bash
-python run_tests.py integration --no-cleanup
-```
-
-**Debug Specific Test:**
-```bash
-pytest tests/test_integration.py::TestCommandExecution::test_exec_with_stdin -v -s
+pytest tests/integration/test_shimmer.py -k test_name -v -s
 ```
 
 **Manual Pebble Setup:**
@@ -69,17 +66,13 @@ mkdir -p $PEBBLE/layers
 pebble run --hold &
 
 # Run tests against manual setup
-pytest tests/test_integration.py::TestSystemIntegration::test_system_info -v
+pytest tests/integration/ -v
 ```
 
-### Performance Benchmarking
-
+**Slowest Tests:**
 ```bash
-# Run performance tests with timing
-pytest tests/test_integration.py::TestPerformance -v --durations=10
-
-# Profile specific operations
-python -m pytest tests/test_integration.py::TestPerformance::test_concurrent_operations --profile
+# Show timing for the 10 slowest tests
+pytest tests/integration/ -v --durations=10
 ```
 
 ### Troubleshooting
@@ -154,4 +147,4 @@ tox -e lint
 - Add tests for new functionality
 - Update documentation as needed
 - Follow existing code style (enforced by ruff)
-- Ensure type safety (checked by pyright)
+- Ensure type safety (checked by ty)
