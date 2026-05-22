@@ -19,6 +19,10 @@ Bug fixes and packaging:
   notice types, and renders `repeat_after` as a valid Pebble duration string.
 - `socket_path` now also sets the `PEBBLE_SOCKET` environment variable, as
   documented.
+- The pebble exception types (`Error`, `APIError`, `ChangeError`,
+  `ConnectionError`, `ExecError`, `PathError`, `ProtocolError`, `TimeoutError`)
+  can now be imported directly from `shimmer` (e.g. `from shimmer import
+  APIError`); previously they had to be imported from `ops.pebble`.
 - `get_notice()` and `get_notices()` now return correctly-typed `Notice`
   objects (real `last_occurred`/`last_data`/`expire_after`) parsed from
   Pebble's per-ID YAML. `get_notice(id)` previously returned the wrong notice
