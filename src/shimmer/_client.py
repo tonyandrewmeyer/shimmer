@@ -726,6 +726,22 @@ class PebbleCliClient:
         data = self._run_json(["tasks", str(change_id)])
         return Change.from_dict(data)
 
+    def abort_change(self, change_id: ChangeID) -> Change:
+        """Unsupported: the Pebble CLI cannot abort a change.
+
+        ops.pebble.Client.abort_change posts ``{"action": "abort"}`` to the
+        changes API, but the CLI exposes no equivalent command (only ``pebble
+        changes`` and ``pebble tasks`` exist under Changes), so there is no way
+        to back this through the CLI. The method is provided so PebbleCliClient
+        still satisfies PebbleClientProtocol / ops.pebble.Client's surface, and
+        raises a clear error rather than ``AttributeError``.
+        """
+        raise NotImplementedError(
+            "The Pebble CLI does not expose a command to abort a change, so "
+            "shimmer cannot implement abort_change(). This is a limitation of "
+            "the CLI, not of Pebble itself."
+        )
+
     def get_changes(
         self,
         select: ChangeState = ChangeState.IN_PROGRESS,

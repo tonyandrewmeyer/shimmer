@@ -969,6 +969,11 @@ ID   User    Type           Key                    First                 Repeate
         with pytest.raises(NotImplementedError, match="deprecated"):
             client.ack_warnings(datetime.datetime.now(datetime.UTC))
 
+    def test_abort_change_unsupported(self, client: PebbleCliClient):
+        """The CLI has no abort command, so abort_change raises clearly."""
+        with pytest.raises(NotImplementedError, match="abort"):
+            client.abort_change(ops.pebble.ChangeID("1"))
+
     def test_get_identities(self, mock_subprocess: Mock, client: PebbleCliClient):
         """Test getting identities."""
         mock_subprocess.run.return_value.stdout = json.dumps(
@@ -1036,6 +1041,8 @@ class TestCompatibilityWithOpsPebble:
             "push",
             "exec",
             "get_changes",
+            "get_change",
+            "abort_change",
             "wait_change",
             "get_notices",
             "get_notice",
@@ -1050,6 +1057,24 @@ class TestCompatibilityWithOpsPebble:
         for method in required_methods:
             assert hasattr(client, method), f"Missing method: {method}"
             assert callable(getattr(client, method)), f"Method not callable: {method}"
+
+    def test_satisfies_pebble_client_protocol(self, client: PebbleCliClient):
+        """The client must implement every method of PebbleClientProtocol.
+
+        Derived dynamically from the protocol so a method added there (e.g.
+        abort_change) can't silently go unimplemented on PebbleCliClient.
+        """
+        from shimmer._protocol import PebbleClientProtocol
+
+        protocol_methods = {
+            name
+            for name in dir(PebbleClientProtocol)
+            if not name.startswith("_")
+            and callable(getattr(PebbleClientProtocol, name, None))
+        }
+        assert protocol_methods, "no protocol methods discovered"
+        missing = [m for m in sorted(protocol_methods) if not hasattr(client, m)]
+        assert not missing, f"client does not satisfy protocol; missing: {missing}"
 
     def test_method_signatures_compatible(self, client: PebbleCliClient):
         """Test that method signatures are compatible with ops.pebble.Client."""
