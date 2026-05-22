@@ -48,6 +48,11 @@ Bug fixes and packaging:
   The Pebble CLI exposes no command to abort a change, so it raises a clear
   `NotImplementedError` explaining the limitation instead of failing with
   `AttributeError`.
+- `pull()` now returns a file handle that streams from disk instead of
+  buffering the whole file into an in-memory `io.StringIO`/`io.BytesIO`. This
+  matches `ops.pebble.Client.pull` (which also returns an open file object over
+  an unlinked temp file), so large files no longer require a full extra copy in
+  memory. The return value is still a readable text/binary file object.
 
 # 2025-07-25
 

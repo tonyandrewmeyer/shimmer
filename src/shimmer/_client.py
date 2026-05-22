@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import datetime
 import fnmatch
-import io
 import json
 import os
 import pathlib
@@ -84,6 +83,10 @@ class PebbleCliClient:
         timeout: float = 5.0,
         pebble_binary: str = "pebble",
     ):
+        # ``opener`` and ``base_url`` are accepted only for signature parity with
+        # ops.pebble.Client (so PebbleCliClient is a drop-in). They configure the
+        # socket HTTP transport, which the CLI client doesn't use, so they are
+        # intentionally accepted-and-ignored.
         self.timeout = timeout
         self.pebble_binary = pebble_binary
         self._env = os.environ.copy()
@@ -516,19 +519,38 @@ class PebbleCliClient:
         *,
         encoding: str | None = "utf-8",
     ) -> TextIO | BinaryIO:
-        """Read a file from the remote system."""
-        with tempfile.NamedTemporaryFile() as tmp_file:
-            tmp_file.close()
-            cmd = ["pull", path, tmp_file.name]
-            try:
-                self._run_command(cmd)
-            except APIError as e:
-                self._raise_path_error(e)
-            if encoding is None:
-                with open(tmp_file.name, "rb") as tmp_file:
-                    return io.BytesIO(tmp_file.read())
-            with open(tmp_file.name, encoding=encoding) as tmp_file:
-                return io.StringIO(tmp_file.read())
+        """Read a file from the remote system.
+
+        Returns a readable file object, streaming from disk rather than
+        buffering the whole file in memory. The Pebble CLI writes the fetched
+        file to a path, so we pull into a temp file, open it, then unlink it
+        immediately: on Unix the open handle stays valid until closed, so the
+        data is still readable and the temp file is reclaimed when the caller
+        closes it. This mirrors ops.pebble.Client.pull, which likewise returns
+        an open file object over an unlinked temp file (``newline=""`` serves
+        line endings as-is, matching it).
+        """
+        fd, tmp_name = tempfile.mkstemp()
+        os.close(fd)
+        # On a failed pull the CLI removes the destination it was given, so all
+        # cleanup uses missing_ok to tolerate the temp file already being gone.
+        tmp_path = pathlib.Path(tmp_name)
+        try:
+            self._run_command(["pull", path, tmp_name])
+        except APIError as e:
+            tmp_path.unlink(missing_ok=True)
+            self._raise_path_error(e)
+        except BaseException:
+            tmp_path.unlink(missing_ok=True)
+            raise
+
+        handle: TextIO | BinaryIO = (
+            open(tmp_name, "rb")
+            if encoding is None
+            else open(tmp_name, encoding=encoding, newline="")
+        )
+        tmp_path.unlink(missing_ok=True)
+        return handle
 
     def push(
         self,
