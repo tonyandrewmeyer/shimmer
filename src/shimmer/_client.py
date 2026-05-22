@@ -437,10 +437,10 @@ class PebbleCliClient:
         group: str | None = None,
     ) -> None:
         """Write content to a file on the remote system."""
-        if hasattr(source, "read") and callable(source.read):
-            content = source.read()
-        else:
+        if isinstance(source, str | bytes):
             content = source
+        else:
+            content = source.read()
         if isinstance(content, str):
             content = content.encode(encoding)
 
@@ -556,10 +556,10 @@ class PebbleCliClient:
         # Prepare stdin content
         stdin_content = None
         if stdin is not None:
-            if hasattr(stdin, "read") and callable(stdin.read):
-                stdin_content = stdin.read()
-            else:
+            if isinstance(stdin, str | bytes):
                 stdin_content = stdin
+            else:
+                stdin_content = stdin.read()
 
             if isinstance(stdin_content, str) and encoding is None:
                 stdin_content = stdin_content.encode()
@@ -599,7 +599,7 @@ class PebbleCliClient:
         return ExecProcess(
             command=command,
             process=process,
-            stdin_content=stdin_content,  # type: ignore
+            stdin_content=stdin_content,
             encoding=encoding,
             combine_stderr=combine_stderr,
             timeout=timeout,
@@ -714,8 +714,8 @@ class PebbleCliClient:
                     user_id=None if fields[1] == "public" else int(fields[1]),
                     type=fields[2],
                     key=fields[3],
-                    first_occurred=fields[4],
-                    last_repeated=fields[5],
+                    first_occurred=datetime.datetime.fromisoformat(fields[4]),
+                    last_repeated=datetime.datetime.fromisoformat(fields[5]),
                     last_occurred=datetime.datetime.now(),  # Not available in CLI output
                     occurrences=int(fields[6]),
                 )
@@ -794,7 +794,7 @@ class PebbleCliClient:
         for name, identity in identities.items():
             if identity is None:
                 identity_data[name] = None
-            elif hasattr(identity, "to_dict"):
+            elif isinstance(identity, Identity):
                 identity_data[name] = identity.to_dict()
             else:
                 identity_data[name] = identity

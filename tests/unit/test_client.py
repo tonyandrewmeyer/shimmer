@@ -289,7 +289,9 @@ class TestPebbleCliClient:
         call_args = mock_subprocess.run.call_args[0][0]
         assert call_args == ["mock-pebble", "signal", "HUP", "service1"]
 
-    def test_send_signal_bare_name(self, mock_subprocess: Mock, client: PebbleCliClient):
+    def test_send_signal_bare_name(
+        self, mock_subprocess: Mock, client: PebbleCliClient
+    ):
         """Test sending signal by bare name without the 'SIG' prefix."""
         client.send_signal("HUP", ["service1"])
 
