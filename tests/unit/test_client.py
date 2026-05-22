@@ -11,6 +11,7 @@ from unittest.mock import Mock, patch
 
 import ops
 import pytest
+from pytest_mock import MockerFixture
 
 from shimmer import ExecProcess, PebbleCliClient
 
@@ -156,22 +157,22 @@ class TestPebbleCliClient:
         assert plan.checks == plan_data["checks"]
         assert plan.log_targets == plan_data["log-targets"]
 
-    def test_replan_services(self, mock_subprocess: Mock, client: PebbleCliClient):
-        """Test replanning services."""
-        mock_subprocess.run.return_value.stdout = "Change 42 completed"
+    def test_replan_services(
+        self, mock_subprocess: Mock, client: PebbleCliClient, mocker: MockerFixture
+    ):
+        """Replan captures the real change id (via --no-wait) and waits."""
+        mock_subprocess.run.return_value.stdout = "42"
+        wait = mocker.patch.object(client, "wait_change")
 
         change_id = client.replan_services()
 
-        assert change_id == ops.pebble.ChangeID("?")
-        mock_subprocess.run.assert_called_once_with(
-            ["mock-pebble", "replan"],
-            input=None,
-            capture_output=True,
-            text=True,
-            timeout=5.0,
-            env=client._env,  # type: ignore
-            check=True,
-        )
+        assert change_id == ops.pebble.ChangeID("42")
+        wait.assert_called_once()
+        assert mock_subprocess.run.call_args[0][0] == [
+            "mock-pebble",
+            "replan",
+            "--no-wait",
+        ]
 
     def test_replan_services_no_wait(
         self, mock_subprocess: Mock, client: PebbleCliClient
@@ -247,40 +248,58 @@ class TestPebbleCliClient:
             "json",
         ]
 
-    def test_start_services(self, mock_subprocess: Mock, client: PebbleCliClient):
+    def test_start_services(
+        self, mock_subprocess: Mock, client: PebbleCliClient, mocker: MockerFixture
+    ):
         """Test starting services."""
-        mock_subprocess.run.return_value.stdout = "Change 42 completed"
+        mock_subprocess.run.return_value.stdout = "42"
+        wait = mocker.patch.object(client, "wait_change")
 
         change_id = client.start_services(["service1", "service2"])
 
-        assert change_id == ops.pebble.ChangeID("?")
+        assert change_id == ops.pebble.ChangeID("42")
+        wait.assert_called_once()
         call_args = mock_subprocess.run.call_args[0][0]
-        assert call_args == ["mock-pebble", "start", "service1", "service2"]
+        assert call_args == [
+            "mock-pebble",
+            "start",
+            "service1",
+            "service2",
+            "--no-wait",
+        ]
 
     def test_start_services_empty_list(self, client: PebbleCliClient):
         """Test starting services with empty list raises error."""
         with pytest.raises(ValueError, match="services list cannot be empty"):
             client.start_services([])
 
-    def test_stop_services(self, mock_subprocess: Mock, client: PebbleCliClient):
+    def test_stop_services(
+        self, mock_subprocess: Mock, client: PebbleCliClient, mocker: MockerFixture
+    ):
         """Test stopping services."""
-        mock_subprocess.run.return_value.stdout = "Change 42 completed"
+        mock_subprocess.run.return_value.stdout = "42"
+        wait = mocker.patch.object(client, "wait_change")
 
         change_id = client.stop_services(["service1"])
 
-        assert change_id == ops.pebble.ChangeID("?")
+        assert change_id == ops.pebble.ChangeID("42")
+        wait.assert_called_once()
         call_args = mock_subprocess.run.call_args[0][0]
-        assert call_args == ["mock-pebble", "stop", "service1"]
+        assert call_args == ["mock-pebble", "stop", "service1", "--no-wait"]
 
-    def test_restart_services(self, mock_subprocess: Mock, client: PebbleCliClient):
+    def test_restart_services(
+        self, mock_subprocess: Mock, client: PebbleCliClient, mocker: MockerFixture
+    ):
         """Test restarting services."""
-        mock_subprocess.run.return_value.stdout = "Change 42 completed"
+        mock_subprocess.run.return_value.stdout = "42"
+        wait = mocker.patch.object(client, "wait_change")
 
         change_id = client.restart_services(["service1"])
 
-        assert change_id == ops.pebble.ChangeID("?")
+        assert change_id == ops.pebble.ChangeID("42")
+        wait.assert_called_once()
         call_args = mock_subprocess.run.call_args[0][0]
-        assert call_args == ["mock-pebble", "restart", "service1"]
+        assert call_args == ["mock-pebble", "restart", "service1", "--no-wait"]
 
     def test_send_signal_string(self, mock_subprocess: Mock, client: PebbleCliClient):
         """Test sending signal by string name."""
@@ -376,19 +395,53 @@ class TestPebbleCliClient:
         assert call_args[-2:] == ["--format", "json"]
 
     def test_start_checks(self, mock_subprocess: Mock, client: PebbleCliClient):
-        """Test starting checks."""
+        """Starting checks returns those that were inactive (now started)."""
+        # get_checks (called first) reports both checks inactive.
+        mock_subprocess.run.return_value.stdout = json.dumps(
+            {
+                "checks": {
+                    "check1": {
+                        "name": "check1",
+                        "status": "inactive",
+                        "level": "alive",
+                        "threshold": 3,
+                    },
+                    "check2": {
+                        "name": "check2",
+                        "status": "inactive",
+                        "level": "alive",
+                        "threshold": 3,
+                    },
+                }
+            }
+        )
+
         started = client.start_checks(["check1", "check2"])
 
         assert started == ["check1", "check2"]
-        call_args = mock_subprocess.run.call_args[0][0]
+        call_args = mock_subprocess.run.call_args[0][0]  # last call: start-checks
         assert call_args == ["mock-pebble", "start-checks", "check1", "check2"]
 
     def test_stop_checks(self, mock_subprocess: Mock, client: PebbleCliClient):
-        """Test stopping checks."""
+        """Stopping checks returns those that were running (now stopped)."""
+        # get_checks reports check1 running (status up), so stopping it changes it.
+        mock_subprocess.run.return_value.stdout = json.dumps(
+            {
+                "checks": {
+                    "check1": {
+                        "name": "check1",
+                        "status": "up",
+                        "level": "alive",
+                        "threshold": 3,
+                    }
+                }
+            }
+        )
+
         stopped = client.stop_checks(["check1"])
 
         assert stopped == ["check1"]
-        call_args = mock_subprocess.run.call_args[0][0]
+        call_args = mock_subprocess.run.call_args[0][0]  # last call: stop-checks
         assert call_args == ["mock-pebble", "stop-checks", "check1"]
 
     def test_list_files(self, mock_subprocess: Mock, client: PebbleCliClient):
@@ -622,7 +675,8 @@ class TestPebbleCliClient:
         """Test getting changes."""
         mock_subprocess.run.return_value.stdout = self._changes_json()
 
-        changes = client.get_changes()
+        # Default select is IN_PROGRESS now (matching ops); pass ALL to see both.
+        changes = client.get_changes(select=ops.pebble.ChangeState.ALL)
 
         assert len(changes) == 2
         assert changes[0].id == "1"
@@ -833,13 +887,12 @@ ID   User    Type           Key                    First                 Repeate
         with pytest.raises(ValueError, match="Only custom notices are supported"):
             client.notify(ops.pebble.NoticeType.CHANGE_UPDATE, "some-key")
 
-    def test_get_warnings_empty(self, mock_subprocess: Mock, client: PebbleCliClient):
-        """Test that the no-warnings case returns an empty list."""
-        mock_subprocess.run.return_value.stdout = "No warnings.\n"
-        assert client.get_warnings() == []
-
-        mock_subprocess.run.return_value.stdout = ""
-        assert client.get_warnings() == []
+    def test_warnings_unsupported(self, client: PebbleCliClient):
+        """Warnings are deprecated in Pebble; both methods raise clearly."""
+        with pytest.raises(NotImplementedError, match="deprecated"):
+            client.get_warnings()
+        with pytest.raises(NotImplementedError, match="deprecated"):
+            client.ack_warnings(datetime.datetime.now(datetime.UTC))
 
     def test_get_identities(self, mock_subprocess: Mock, client: PebbleCliClient):
         """Test getting identities."""
