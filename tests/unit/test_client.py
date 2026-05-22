@@ -2,6 +2,7 @@
 
 """Unit tests for Shimmer - Pebble CLI Client."""
 
+import datetime
 import inspect
 import io
 import json
@@ -502,8 +503,6 @@ ID   User    Type           Key                    First                 Repeate
 
     def test_notify_repeat_after(self, mock_subprocess: Mock, client: PebbleCliClient):
         """Test that repeat_after is rendered as a Pebble duration string."""
-        import datetime
-
         mock_subprocess.run.return_value.stdout = "Recorded notice 91"
 
         client.notify(
