@@ -80,7 +80,7 @@ client = PebbleCliClient(socket_path="/custom/path/.pebble.socket")
 ### Error Handling
 
 ```python
-from shimmer import APIError, ConnectionError, TimeoutError
+from ops.pebble import APIError, ConnectionError, TimeoutError
 
 try:
     client.start_services(["nonexistent"])
@@ -135,11 +135,9 @@ Other minor limitations:
 
 - `replan_services()`, `start_services()`, `stop_services()`, and `restart_services()` are only able to return the change ID if no timeout is set.
 - `notify()` only supports custom notices.
-- `get_notices()` cannot include the `last_occurred`, `last_data`, `repeat_after`, or `expire_after` fields
 - `autostart_services()` is an alias for `replan()` (possibly we could fix this by getting the current state?)
-- `wait_change()` is yet to be implemented
-- `ack_warnings()` is yet to be implemented
-- `get_warnings()` is only implemented for the 'no warnings' case
+- `ack_warnings()` is yet to be implemented.
+- `get_warnings()` is only implemented for the 'no warnings' case; parsing a non-empty warnings list raises `NotImplementedError`.
 
 `get_services()`, `get_checks()`, `list_files()`, `get_changes()`,
 `get_change()`, and `get_identities()` use Pebble's structured `--format json`
