@@ -49,6 +49,23 @@ from ops.pebble import (
 from ._process import ExecProcess
 
 
+class _NoticeYamlLoader(yaml.SafeLoader):
+    """SafeLoader that leaves RFC3339 timestamps as strings.
+
+    ``pebble notice <id>`` emits YAML whose keys match the Pebble API wire
+    format, so the parsed mapping can be handed straight to
+    ``ops.pebble.Notice.from_dict``. PyYAML's default implicit resolver,
+    however, turns timestamp scalars into ``datetime`` objects, whereas
+    ``from_dict`` expects the raw RFC3339 strings — so we drop that resolver.
+    """
+
+
+_NoticeYamlLoader.yaml_implicit_resolvers = {
+    ch: [(tag, rx) for tag, rx in resolvers if tag != "tag:yaml.org,2002:timestamp"]
+    for ch, resolvers in yaml.SafeLoader.yaml_implicit_resolvers.items()
+}
+
+
 class PebbleCliClient:
     """A drop-in replacement for ops.pebble.Client that uses CLI commands.
 
@@ -663,7 +680,7 @@ class PebbleCliClient:
         keys: Iterable[str] | None = None,
     ) -> list[Notice]:
         """Get notices."""
-        cmd = ["notices", "--abs-time"]
+        cmd = ["notices"]
         if users:
             cmd.extend(["--users", str(users)])
         if user_id is not None:
@@ -677,58 +694,37 @@ class PebbleCliClient:
             cmd.extend(["--key", k])
 
         result = self._run_command(cmd)
+        # The ``notices`` table only carries a subset of a notice's fields (no
+        # last-occurred, last-data, or expire-after) and renders timestamps in a
+        # lossy human form, so we use it just to discover the matching IDs and
+        # then fetch each notice in full via ``get_notice`` (which parses the
+        # complete YAML representation). The first whitespace-delimited column is
+        # the numeric ID; the remaining columns may contain spaces.
         # Output looks like:
         # ID   User    Type           Key                    First               Repeated            Occurrences
         # 2    public  change-update  2                      today at 06:49 UTC  today at 06:49 UTC  3
-        notices: list[Notice] = []
         lines = result.stdout.strip().splitlines()
-        if not lines or len(lines) < 2:
-            return notices
-
-        header = lines[0]
-        # Find column start indices by header.
-        columns = ["ID", "User", "Type", "Key", "First", "Repeated", "Occurrences"]
-        col_starts: list[int | None] = []
-        for col in columns:
-            idx = header.find(col)
-            if idx == -1:
-                raise ValueError(f"Column '{col}' not found in header: {header}")
-            col_starts.append(idx)
-        # Add end index for easier slicing.
-        col_starts.append(None)
-
-        for line in lines[1:]:
-            if not line.strip():
-                continue
-            fields: list[str] = []
-            for i in range(len(columns)):
-                start = col_starts[i]
-                end = col_starts[i + 1]
-                value = (
-                    line[start:end].strip() if end is not None else line[start:].strip()
-                )
-                fields.append(value)
-            if len(fields) == 7:
-                notice = Notice(
-                    id=fields[0],
-                    user_id=None if fields[1] == "public" else int(fields[1]),
-                    type=fields[2],
-                    key=fields[3],
-                    first_occurred=datetime.datetime.fromisoformat(fields[4]),
-                    last_repeated=datetime.datetime.fromisoformat(fields[5]),
-                    last_occurred=datetime.datetime.now(),  # Not available in CLI output
-                    occurrences=int(fields[6]),
-                )
-            notices.append(notice)
-        return notices
+        # When there are no matches Pebble prints "No matching notices."; only a
+        # populated result starts with the "ID ..." header row.
+        if not lines or not lines[0].startswith("ID"):
+            return []
+        ids = [line.split(maxsplit=1)[0] for line in lines[1:] if line.strip()]
+        return [self.get_notice(notice_id) for notice_id in ids]
 
     def get_notice(self, id: str) -> Notice:
         """Get a specific notice by ID."""
-        cmd = ["notice", id]
-        self._run_command(cmd)
+        result = self._run_command(["notice", id])
+        # ``pebble notice <id>`` emits a YAML document whose keys match the
+        # Pebble API wire format, so it can be handed to Notice.from_dict.
         # Output looks like:
-        # Recorded notice 12
-        return self.get_notices(keys=[id])[0]
+        #   id: "12"
+        #   user-id: 1000
+        #   type: custom
+        #   key: example.com/foo
+        #   first-occurred: 2026-05-22T11:31:08.571903021Z
+        #   ...
+        data = yaml.load(result.stdout, Loader=_NoticeYamlLoader)
+        return Notice.from_dict(data)
 
     def notify(
         self,

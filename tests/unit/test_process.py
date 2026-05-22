@@ -92,9 +92,7 @@ class TestPebbleCliExecProcess:
 
         exec_process.wait()
 
-        mock_process.communicate.assert_called_once_with(
-            input="hello", timeout=None
-        )
+        mock_process.communicate.assert_called_once_with(input="hello", timeout=None)
 
     def test_wait_timeout(self, mock_process: Mock):
         """Test process wait timeout."""

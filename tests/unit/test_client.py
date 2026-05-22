@@ -700,28 +700,106 @@ class TestPebbleCliClient:
         call_args = mock_subprocess.run.call_args[0][0]
         assert call_args == ["mock-pebble", "tasks", "2", "--format", "json"]
 
+    @staticmethod
+    def _notice_yaml(
+        id: str,
+        *,
+        user_id: str = "1000",
+        type: str = "custom",
+        key: str = "example.com/foo",
+        occurrences: int = 1,
+        with_data: bool = True,
+    ) -> str:
+        """Build a YAML document matching ``pebble notice <id>`` output."""
+        doc = (
+            f'id: "{id}"\n'
+            f"user-id: {user_id}\n"
+            f"type: {type}\n"
+            f'key: "{key}"\n'
+            "first-occurred: 2025-07-16T03:08:13.5Z\n"
+            "last-occurred: 2025-07-16T04:09:14.5Z\n"
+            "last-repeated: 2025-07-16T03:08:13.5Z\n"
+            f"occurrences: {occurrences}\n"
+            "expire-after: 168h0m0s\n"
+        )
+        if with_data:
+            doc += 'last-data:\n    a: "1"\n    b: "2"\n'
+        return doc
+
     def test_get_notices(self, mock_subprocess: Mock, client: PebbleCliClient):
-        """Test getting notices."""
-        text_output = """
+        """get_notices() parses the table for IDs then fetches each in full."""
+        table = """
 ID   User    Type           Key                    First                 Repeated              Occurrences
 89   public  change-update  87                     2025-07-16T03:08:13Z  2025-07-16T03:08:13Z  3
 42   1000    custom         demo.example.com/test  2025-07-12T07:08:09Z  2025-07-16T03:08:13Z  10
 """.strip()
-        mock_subprocess.run.return_value.stdout = text_output
+        mock_subprocess.run.side_effect = [
+            Mock(returncode=0, stdout=table, stderr=""),
+            Mock(
+                returncode=0,
+                stdout=self._notice_yaml(
+                    "89",
+                    user_id="null",  # public notices render user-id as null
+                    type="change-update",
+                    key="87",
+                    occurrences=3,
+                ),
+                stderr="",
+            ),
+            Mock(
+                returncode=0,
+                stdout=self._notice_yaml(
+                    "42", key="demo.example.com/test", occurrences=10
+                ),
+                stderr="",
+            ),
+        ]
 
         notices = client.get_notices()
 
         assert len(notices) == 2
         assert notices[0].id == "89"
-        assert notices[0].type == "change-update"
+        assert notices[0].type == ops.pebble.NoticeType.CHANGE_UPDATE
         assert notices[0].key == "87"
         assert notices[0].user_id is None
         assert notices[0].occurrences == 3
         assert notices[1].id == "42"
-        assert notices[1].type == "custom"
+        assert notices[1].type == ops.pebble.NoticeType.CUSTOM
         assert notices[1].key == "demo.example.com/test"
         assert notices[1].user_id == 1000
         assert notices[1].occurrences == 10
+        # The detail fetch supplies what the table cannot.
+        assert notices[1].last_data == {"a": "1", "b": "2"}
+
+    def test_get_notices_empty(self, mock_subprocess: Mock, client: PebbleCliClient):
+        """No matching notices returns an empty list without per-ID fetches."""
+        mock_subprocess.run.return_value.stdout = "No matching notices."
+
+        assert client.get_notices() == []
+        assert mock_subprocess.run.call_count == 1
+
+    def test_get_notice(self, mock_subprocess: Mock, client: PebbleCliClient):
+        """get_notice() parses the full YAML document into a typed Notice."""
+        mock_subprocess.run.return_value.stdout = self._notice_yaml("12")
+
+        notice = client.get_notice("12")
+
+        call_args = mock_subprocess.run.call_args[0][0]
+        assert call_args == ["mock-pebble", "notice", "12"]
+        assert notice.id == "12"
+        assert notice.user_id == 1000
+        assert notice.type == ops.pebble.NoticeType.CUSTOM
+        assert notice.key == "example.com/foo"
+        # Timestamps are real datetimes, and last_occurred is the parsed value
+        # rather than a fabricated "now".
+        assert notice.first_occurred == datetime.datetime(
+            2025, 7, 16, 3, 8, 13, 500000, tzinfo=datetime.UTC
+        )
+        assert notice.last_occurred == datetime.datetime(
+            2025, 7, 16, 4, 9, 14, 500000, tzinfo=datetime.UTC
+        )
+        assert notice.last_data == {"a": "1", "b": "2"}
+        assert notice.expire_after == datetime.timedelta(hours=168)
 
     def test_notify(self, mock_subprocess: Mock, client: PebbleCliClient):
         """Test creating a notice."""

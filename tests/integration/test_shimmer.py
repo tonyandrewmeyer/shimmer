@@ -11,6 +11,7 @@ These tests run against a real Pebble installation and require:
 
 from __future__ import annotations
 
+import datetime
 import pathlib
 import subprocess
 import tempfile
@@ -438,10 +439,11 @@ class TestNotices:
 
     def test_custom_notice(self, running_pebble: PebbleCliClient):
         """Test creating and retrieving custom notices."""
+        data = {"test": "integration", "timestamp": str(time.time())}
         notice_id = running_pebble.notify(
             type=ops.pebble.NoticeType.CUSTOM,
             key="shimmer.test/integration",
-            data={"test": "integration", "timestamp": str(time.time())},
+            data=data,
         )
 
         assert isinstance(notice_id, str)
@@ -454,7 +456,29 @@ class TestNotices:
                 test_notice = notice
                 break
         assert test_notice is not None
-        assert test_notice.type == "custom"
+        assert test_notice.type == ops.pebble.NoticeType.CUSTOM
+        # Fields should be fully typed and match what the notice was created
+        # with (not fabricated, as a previous implementation did for
+        # last_occurred and last_data).
+        assert test_notice.id == notice_id
+        assert test_notice.last_data == data
+        assert isinstance(test_notice.first_occurred, datetime.datetime)
+        assert isinstance(test_notice.last_occurred, datetime.datetime)
+
+    def test_get_notice_by_id(self, running_pebble: PebbleCliClient):
+        """get_notice() looks up by ID and returns a fully-typed Notice."""
+        notice_id = running_pebble.notify(
+            type=ops.pebble.NoticeType.CUSTOM,
+            key="shimmer.test/by-id",
+            data={"hello": "world"},
+        )
+
+        notice = running_pebble.get_notice(notice_id)
+
+        assert notice.id == notice_id
+        assert notice.key == "shimmer.test/by-id"
+        assert notice.type == ops.pebble.NoticeType.CUSTOM
+        assert notice.last_data == {"hello": "world"}
 
 
 class TestErrorHandling:
