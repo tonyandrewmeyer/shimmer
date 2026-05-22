@@ -7,8 +7,15 @@ on:
 permissions: {}
 
 jobs:
+  # Gate the release on the full lint + unit + integration suite passing for the
+  # tagged commit, so a red CI can never publish to PyPI.
+  ci:
+    name: CI
+    uses: ./.github/workflows/ci.yaml
+
   build-n-publish:
     name: Build and Publish to PyPI
+    needs: ci
     runs-on: ubuntu-latest
     environment: publish-pypi
     permissions:

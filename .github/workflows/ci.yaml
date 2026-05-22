@@ -5,6 +5,8 @@ on:
     branches: [ "main" ]
   pull_request:
     branches: [ "**" ]
+  # Allow other workflows (e.g. publish.yaml) to gate on these checks.
+  workflow_call:
 
 permissions: {}
 
