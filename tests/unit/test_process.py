@@ -92,9 +92,7 @@ class TestPebbleCliExecProcess:
 
         exec_process.wait()
 
-        mock_process.communicate.assert_called_once_with(
-            input="hello", timeout=None
-        )
+        mock_process.communicate.assert_called_once_with(input="hello", timeout=None)
 
     def test_wait_timeout(self, mock_process: Mock):
         """Test process wait timeout."""
@@ -235,7 +233,9 @@ class TestPebbleCliExecProcess:
             exec_process.wait()
 
         assert exc_info.value.exit_code == 3
-        assert len(exc_info.value.stderr) == 1024 * 1024
+        stderr = exc_info.value.stderr
+        assert stderr is not None
+        assert len(stderr) == 1024 * 1024
 
     @patch("shimmer._process.subprocess.Popen")
     def test_exec_process_edge_cases(self, mock_popen: Mock, client: PebbleCliClient):
