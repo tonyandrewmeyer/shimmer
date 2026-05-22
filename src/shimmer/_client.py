@@ -837,7 +837,7 @@ class PebbleCliClient:
         if type.value != "custom":
             raise ValueError("Only custom notices are supported")
         cmd = ["notify"]
-        if repeat_after:
+        if repeat_after is not None:
             # Pebble expects a Go duration string (e.g. "1800s"), not bare seconds.
             cmd.extend(["--repeat-after", f"{repeat_after.total_seconds()}s"])
         cmd.append(key)
