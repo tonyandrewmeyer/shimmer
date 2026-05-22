@@ -80,7 +80,7 @@ client = PebbleCliClient(socket_path="/custom/path/.pebble.socket")
 ### Error Handling
 
 ```python
-from ops.pebble import APIError, ConnectionError, TimeoutError
+from shimmer import APIError, ConnectionError, TimeoutError
 
 try:
     client.start_services(["nonexistent"])
