@@ -82,18 +82,93 @@ class TestPebbleCliClient:
     def test_run_command_api_error(
         self, mock_subprocess: Mock, client: PebbleCliClient
     ):
-        """Test API error handling."""
-        error_response = "Error: Test error"
+        """An unclassifiable CLI error maps to a 500 with the stripped message."""
         mock_subprocess.run.side_effect = subprocess.CalledProcessError(
-            1, "cmd", stderr=error_response
+            1, "cmd", stderr="error: something went wrong"
         )
 
         with pytest.raises(ops.pebble.APIError) as exc_info:
             client._run_command(["test"])  # type: ignore
 
-        assert isinstance(exc_info.value, ops.pebble.APIError)
-        assert exc_info.value.message == "Error: Test error"
-        assert exc_info.value.code == 1
+        err = exc_info.value
+        # The "error:" prefix is stripped so the message matches the socket
+        # client's, and the process exit code is not leaked as the HTTP status.
+        assert err.message == "something went wrong"
+        assert err.code == 500
+        assert err.status == "Internal Server Error"
+        assert err.body == {
+            "type": "error",
+            "status-code": 500,
+            "status": "Internal Server Error",
+            "result": {"message": "something went wrong"},
+        }
+
+    @pytest.mark.parametrize(
+        ("stderr", "code", "status", "message"),
+        [
+            (
+                'error: cannot find change with id "42"',
+                404,
+                "Not Found",
+                'cannot find change with id "42"',
+            ),
+            (
+                "error: stat /no/such: no such file or directory",
+                404,
+                "Not Found",
+                "stat /no/such: no such file or directory",
+            ),
+            (
+                'error: cannot start services: service "x" does not exist',
+                400,
+                "Bad Request",
+                'cannot start services: service "x" does not exist',
+            ),
+            (
+                "error: internal server explosion",
+                500,
+                "Internal Server Error",
+                "internal server explosion",
+            ),
+        ],
+    )
+    def test_run_command_api_error_status_mapping(
+        self,
+        mock_subprocess: Mock,
+        client: PebbleCliClient,
+        stderr: str,
+        code: int,
+        status: str,
+        message: str,
+    ):
+        """CLI stderr is classified into the HTTP status the socket client uses."""
+        mock_subprocess.run.side_effect = subprocess.CalledProcessError(
+            1, "cmd", stderr=stderr
+        )
+
+        with pytest.raises(ops.pebble.APIError) as exc_info:
+            client._run_command(["test"])  # type: ignore
+
+        err = exc_info.value
+        assert err.code == code
+        assert err.status == status
+        assert err.message == message
+        assert err.body["result"]["message"] == message
+        assert err.body["status-code"] == code
+
+    def test_run_command_api_error_empty_stderr(
+        self, mock_subprocess: Mock, client: PebbleCliClient
+    ):
+        """An error with no stderr still produces a usable message."""
+        mock_subprocess.run.side_effect = subprocess.CalledProcessError(
+            3, "cmd", stderr=""
+        )
+
+        with pytest.raises(ops.pebble.APIError) as exc_info:
+            client._run_command(["test"])  # type: ignore
+
+        assert "code 3" in exc_info.value.message
+        assert exc_info.value.code == 500
 
     def test_run_command_file_not_found(
         self, mock_subprocess: Mock, client: PebbleCliClient
@@ -1009,15 +1084,18 @@ class TestCompatibilityWithOpsPebble:
     ):
         """Test that errors are raised in a compatible way."""
         mock_run.side_effect = subprocess.CalledProcessError(
-            404, "cmd", stderr='{"result": {"message": "Not found"}}'
+            1, "cmd", stderr='error: cannot find change with id "1"'
         )
 
         with pytest.raises(ops.pebble.APIError) as exc_info:
             client.get_system_info()
 
+        # Mirrors what ops.pebble.Client would raise for the same not-found
+        # error: HTTP 404 (not the process exit code) and the daemon's message.
         assert isinstance(exc_info.value, ops.pebble.APIError)
         assert exc_info.value.code == 404
-        assert "Not found" in str(exc_info.value.message)
+        assert exc_info.value.status == "Not Found"
+        assert exc_info.value.message == 'cannot find change with id "1"'
 
         mock_run.side_effect = FileNotFoundError()
 

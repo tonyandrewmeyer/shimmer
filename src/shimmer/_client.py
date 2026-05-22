@@ -115,18 +115,57 @@ class PebbleCliClient:
             )
             return result
         except subprocess.CalledProcessError as e:
-            raise APIError(
-                body={"message": e.stderr or str(e)},
-                code=e.returncode,
-                status="Command Failed",
-                message=e.stderr or str(e),
-            ) from e
+            raise self._api_error_from_stderr(e.stderr, e.returncode) from e
         except subprocess.TimeoutExpired as e:
             raise TimeoutError(f"Command {full_cmd} timed out") from e
         except FileNotFoundError as e:
             raise ConnectionError(
                 f"Pebble binary not found: {self.pebble_binary}"
             ) from e
+
+    # Substrings used to recover the HTTP status the *socket* client would have
+    # surfaced. The CLI only prints ``error: <message>`` and exits non-zero, so
+    # the daemon's HTTP status is lost; we infer it from the message text. These
+    # markers mirror the messages the real daemon produces (verified against
+    # ops.pebble.Client). Order matters: not-found is checked before bad-request
+    # so e.g. "cannot find ..." wins over a stray "exist".
+    _NOT_FOUND_MARKERS = ("no such file or directory", "cannot find", "not found")
+    _BAD_REQUEST_MARKERS = ("does not exist", "already exists")
+
+    @classmethod
+    def _api_error_from_stderr(cls, stderr: str | None, returncode: int) -> APIError:
+        """Build an ``APIError`` mirroring ops.pebble.Client as closely as possible.
+
+        The Pebble CLI reports daemon errors as ``error: <message>`` on stderr
+        and exits non-zero, without exposing the HTTP status the socket client
+        sees. We strip that ``error:`` prefix -- so ``message`` matches the
+        socket client's message verbatim -- and infer ``code``/``status`` from
+        the text, falling back to ``500`` when the error can't be classified.
+        ``body`` is reconstructed in Pebble's API wire format so callers that
+        inspect it (e.g. branching on ``code == 404``) see the same shape they
+        would from ops.pebble.Client.
+        """
+        message = (stderr or "").strip()
+        if message[:6].lower() == "error:":
+            message = message[6:].strip()
+        if not message:
+            message = f"pebble CLI exited with code {returncode}"
+
+        lowered = message.lower()
+        if any(m in lowered for m in cls._NOT_FOUND_MARKERS):
+            code, status = 404, "Not Found"
+        elif any(m in lowered for m in cls._BAD_REQUEST_MARKERS):
+            code, status = 400, "Bad Request"
+        else:
+            code, status = 500, "Internal Server Error"
+
+        body: dict[str, Any] = {
+            "type": "error",
+            "status-code": code,
+            "status": status,
+            "result": {"message": message},
+        }
+        return APIError(body=body, code=code, status=status, message=message)
 
     def _run_json(
         self,
@@ -680,17 +719,11 @@ class PebbleCliClient:
     def get_change(self, change_id: ChangeID) -> Change:
         # ``pebble tasks <id>`` returns the full change object (kind, tasks,
         # error and timing included), so we get the complete change directly
-        # rather than scanning the whole list.
-        try:
-            data = self._run_json(["tasks", str(change_id)])
-        except APIError as e:
-            message = f"Could not find change {change_id}"
-            raise APIError(
-                body={"message": message},
-                code=404,
-                status="Command Failed",
-                message=message,
-            ) from e
+        # rather than scanning the whole list. A missing change surfaces as
+        # ``error: cannot find change with id "<id>"``, which _run_command
+        # already turns into a 404 APIError whose message matches the socket
+        # client's, so no special-casing is needed here.
+        data = self._run_json(["tasks", str(change_id)])
         return Change.from_dict(data)
 
     def get_changes(
