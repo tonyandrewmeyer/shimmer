@@ -290,9 +290,14 @@ class PebbleCliClient:
         if isinstance(sig, int):
             sig_name = signal.Signals(sig).name
         else:
-            if not hasattr(signal, sig):
+            # Accept both "SIGHUP" and the bare "HUP" form (any case).
+            full_name = sig.upper()
+            if not full_name.startswith("SIG"):
+                full_name = "SIG" + full_name
+            if full_name not in signal.Signals.__members__:
                 raise ValueError(f"Invalid signal name: {sig}")
-            sig_name = sig
+            sig_name = full_name
+        # Pebble's CLI expects the bare, uppercase signal name (e.g. "HUP").
         cmd = ["signal", sig_name[3:]] + service_list
         self._run_command(cmd)
 
