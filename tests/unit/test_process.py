@@ -41,7 +41,7 @@ class TestPebbleCliExecProcess:
         )
 
         assert exec_process.command == ["echo", "test"]
-        assert exec_process._encoding == "utf-8"  # type: ignore
+        assert exec_process._encoding == "utf-8"
         assert exec_process.stdin == mock_process.stdin
 
     def test_wait_success(self, mock_process: Mock):

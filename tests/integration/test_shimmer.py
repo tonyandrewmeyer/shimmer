@@ -59,7 +59,7 @@ def running_pebble(
     try:
         pebble_process = subprocess.Popen(
             [pebble_client.pebble_binary, "run", "--hold"],
-            env=pebble_client._env,  # type: ignore[reportPrivateUsage]
+            env=pebble_client._env,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
