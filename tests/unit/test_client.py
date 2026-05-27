@@ -24,7 +24,7 @@ class TestPebbleCliClient:
     @pytest.fixture
     def mock_subprocess(self):
         """Mock subprocess for testing."""
-        with patch("shimmer._client.subprocess") as mock_sub:
+        with patch("shimmer._runner.subprocess") as mock_sub:
             mock_result = Mock()
             mock_result.returncode = 0
             mock_result.stdout = ""
@@ -1159,6 +1159,82 @@ ID   User    Type           Key                    First                 Repeate
         assert cmd[:2] == ["mock-pebble", "update-identities"]
         assert "--replace" in cmd
         assert captured["data"] == {"identities": {"alice": None, "bob": None}}
+
+
+class TestRunnerInjection:
+    """Tests for the pluggable runner protocol."""
+
+    def test_injected_runner_receives_full_argv_and_env(self):
+        """An injected runner sees the full pebble argv (binary + subcommand) and env."""
+        from unittest.mock import MagicMock
+
+        from shimmer import LocalSubprocessRunner, Runner
+
+        captured: dict = {}
+
+        class FakeRunner:
+            def run(self, argv, *, input=None, timeout=None, env=None, check=True):
+                captured["argv"] = argv
+                captured["env"] = env
+                result = MagicMock()
+                result.stdout = "v1.2.3\n"
+                result.stderr = ""
+                result.returncode = 0
+                return result
+
+            def popen(
+                self, argv, *, stdin, stdout, stderr, text, env=None
+            ):  # pragma: no cover
+                raise NotImplementedError
+
+        client = PebbleCliClient(pebble_binary="my-pebble", runner=FakeRunner())
+        info = client.get_system_info()
+
+        assert info.version == "v1.2.3"
+        assert captured["argv"] == ["my-pebble", "version", "--client"]
+        assert captured["env"] is client._env
+
+        # Structural check: FakeRunner satisfies the Runner protocol.
+        assert isinstance(FakeRunner(), Runner)
+        # LocalSubprocessRunner also satisfies it.
+        assert isinstance(LocalSubprocessRunner(), Runner)
+
+    def test_default_runner_is_local_subprocess(self):
+        """When no runner is provided, a LocalSubprocessRunner is used."""
+        from shimmer import LocalSubprocessRunner
+
+        client = PebbleCliClient()
+        assert isinstance(client._runner, LocalSubprocessRunner)
+
+    def test_injected_runner_popen_path(self):
+        """An injected runner's popen() is called for the exec/streaming path."""
+        from unittest.mock import MagicMock
+
+        captured: dict = {}
+
+        class FakeRunner:
+            def run(
+                self, argv, *, input=None, timeout=None, env=None, check=True
+            ):  # pragma: no cover
+                raise NotImplementedError
+
+            def popen(self, argv, *, stdin, stdout, stderr, text, env=None):
+                captured["argv"] = argv
+                captured["env"] = env
+                proc = MagicMock()
+                proc.stdin = None
+                proc.stdout = MagicMock()
+                proc.stderr = MagicMock()
+                return proc
+
+        client = PebbleCliClient(pebble_binary="my-pebble", runner=FakeRunner())
+        client.exec(["echo", "hello"])
+
+        assert captured["argv"][0] == "my-pebble"
+        assert "exec" in captured["argv"]
+        assert "echo" in captured["argv"]
+        assert "hello" in captured["argv"]
+        assert captured["env"] is client._env
 
 
 class TestCompatibilityWithOpsPebble:

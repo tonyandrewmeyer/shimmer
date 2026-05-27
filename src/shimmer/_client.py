@@ -49,6 +49,7 @@ from ops.pebble import (
 )
 
 from ._process import ExecProcess
+from ._runner import LocalSubprocessRunner, Runner
 
 
 class _NoticeYamlLoader(yaml.SafeLoader):
@@ -82,6 +83,7 @@ class PebbleCliClient:
         base_url: str = "http://localhost",
         timeout: float = 5.0,
         pebble_binary: str = "pebble",
+        runner: Runner | None = None,
     ):
         # ``opener`` and ``base_url`` are accepted only for signature parity with
         # ops.pebble.Client (so PebbleCliClient is a drop-in). They configure the
@@ -89,6 +91,7 @@ class PebbleCliClient:
         # intentionally accepted-and-ignored.
         self.timeout = timeout
         self.pebble_binary = pebble_binary
+        self._runner: Runner = runner if runner is not None else LocalSubprocessRunner()
         self._env = os.environ.copy()
         if socket_path:
             # Mirror the two environment variables the Pebble CLI honours: PEBBLE
@@ -107,11 +110,9 @@ class PebbleCliClient:
         full_cmd = [self.pebble_binary] + cmd
 
         try:
-            result = subprocess.run(
+            result = self._runner.run(
                 full_cmd,
                 input=input_data,
-                capture_output=True,
-                text=True,
                 timeout=timeout or self.timeout,
                 env=self._env,
                 check=check,
@@ -715,7 +716,7 @@ class PebbleCliClient:
             process_stderr = subprocess.STDOUT
 
         try:
-            process = subprocess.Popen(
+            process = self._runner.popen(
                 full_cmd,
                 stdin=process_stdin,
                 stdout=process_stdout,
