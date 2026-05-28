@@ -10,13 +10,11 @@
 # `latest/candidate` snap channel (stable soon), so the in-project SDK installs
 # that snap in setup-base. To test against an unreleased pebble instead, run a
 # pebble dev workshop alongside and connect its built binary:
-#   workshop connect dev/shimmer-dev:pebble <pebble-workshop>/project-pebble-dev:pebble-bin
+#   workshop connect dev/project-shimmer-dev:pebble <pebble-workshop>/project-pebble-dev:pebble-bin
 name: dev
 base: ubuntu@24.04
 sdks:
   - name: uv
-  - name: tox
-    channel: latest/stable
   - name: project-shimmer-dev    # .workshop/project-shimmer-dev/sdk.yaml
 
   # AI coding agents — uncomment any you want available in this workshop.

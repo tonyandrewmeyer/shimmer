@@ -8,14 +8,14 @@
 # relies on shipped in Pebble's latest/candidate snap channel, which setup-base
 # installs when the `pebble` plug is unconnected.
 #
-# Relies on the `uv` and `tox` SDKs being present in the workshop;
-# ~/.cache/uv is persisted by the `uv` SDK.
+# Relies on the `uv` SDK being present in the workshop (tox comes from the
+# project's `dev` extra, run via `uv run tox`); ~/.cache/uv is persisted by uv.
 name: shimmer-dev
 version: "0"
 summary: In-project setup for developing shimmer
 
 # Optional: consume a `pebble` binary exposed by a pebble dev workshop, for the
-# integration tests. Bind shimmer-dev:pebble to project-pebble-dev:pebble-bin in
+# integration tests. Bind project-shimmer-dev:pebble to project-pebble-dev:pebble-bin in
 # the workshop definition if you run a pebble workshop alongside (e.g. to test
 # against an unreleased pebble). Without it, setup-base installs the candidate
 # snap.

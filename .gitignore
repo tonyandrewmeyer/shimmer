@@ -26,3 +26,4 @@ htmlcov
 # Agents
 .claude/*local*
 
+/.workshop.lock
