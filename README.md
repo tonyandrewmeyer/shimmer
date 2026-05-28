@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/shimmer-logo.png" alt="Shimmer" width="480">
+  <img src="https://raw.githubusercontent.com/tonyandrewmeyer/shimmer/main/assets/shimmer-logo.png" alt="Shimmer" width="480">
 </p>
 
 # Shimmer — a shiny Pebble client
