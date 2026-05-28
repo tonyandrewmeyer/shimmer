@@ -923,62 +923,56 @@ class TestPebbleCliClient:
         assert mock_sleep.call_count == 2
 
     @staticmethod
-    def _notice_yaml(
+    def _notice_dict(
         id: str,
         *,
-        user_id: str = "1000",
+        user_id: int | None = 1000,
         type: str = "custom",
         key: str = "example.com/foo",
         occurrences: int = 1,
         with_data: bool = True,
-    ) -> str:
-        """Build a YAML document matching ``pebble notice <id>`` output."""
-        doc = (
-            f'id: "{id}"\n'
-            f"user-id: {user_id}\n"
-            f"type: {type}\n"
-            f'key: "{key}"\n'
-            "first-occurred: 2025-07-16T03:08:13.5Z\n"
-            "last-occurred: 2025-07-16T04:09:14.5Z\n"
-            "last-repeated: 2025-07-16T03:08:13.5Z\n"
-            f"occurrences: {occurrences}\n"
-            "expire-after: 168h0m0s\n"
-        )
+    ) -> dict[str, object]:
+        """Build a notice mapping matching ``--format json`` output."""
+        notice: dict[str, object] = {
+            "id": id,
+            "user-id": user_id,
+            "type": type,
+            "key": key,
+            "first-occurred": "2025-07-16T03:08:13.5Z",
+            "last-occurred": "2025-07-16T04:09:14.5Z",
+            "last-repeated": "2025-07-16T03:08:13.5Z",
+            "occurrences": occurrences,
+            "expire-after": "168h0m0s",
+        }
         if with_data:
-            doc += 'last-data:\n    a: "1"\n    b: "2"\n'
-        return doc
+            notice["last-data"] = {"a": "1", "b": "2"}
+        return notice
 
     def test_get_notices(self, mock_subprocess: Mock, client: PebbleCliClient):
-        """get_notices() parses the table for IDs then fetches each in full."""
-        table = """
-ID   User    Type           Key                    First                 Repeated              Occurrences
-89   public  change-update  87                     2025-07-16T03:08:13Z  2025-07-16T03:08:13Z  3
-42   1000    custom         demo.example.com/test  2025-07-12T07:08:09Z  2025-07-16T03:08:13Z  10
-""".strip()
-        mock_subprocess.run.side_effect = [
-            Mock(returncode=0, stdout=table, stderr=""),
-            Mock(
-                returncode=0,
-                stdout=self._notice_yaml(
-                    "89",
-                    user_id="null",  # public notices render user-id as null
-                    type="change-update",
-                    key="87",
-                    occurrences=3,
-                ),
-                stderr="",
-            ),
-            Mock(
-                returncode=0,
-                stdout=self._notice_yaml(
-                    "42", key="demo.example.com/test", occurrences=10
-                ),
-                stderr="",
-            ),
-        ]
+        """get_notices() parses the full JSON list in a single call."""
+        mock_subprocess.run.return_value.stdout = json.dumps(
+            {
+                "notices": [
+                    self._notice_dict(
+                        "89",
+                        user_id=None,  # public notices render user-id as null
+                        type="change-update",
+                        key="87",
+                        occurrences=3,
+                    ),
+                    self._notice_dict(
+                        "42", key="demo.example.com/test", occurrences=10
+                    ),
+                ]
+            }
+        )
 
         notices = client.get_notices()
 
+        # A single JSON call returns full notices — no per-ID detail fetch.
+        assert mock_subprocess.run.call_count == 1
+        call_args = mock_subprocess.run.call_args[0][0]
+        assert call_args == ["mock-pebble", "notices", "--format", "json"]
         assert len(notices) == 2
         assert notices[0].id == "89"
         assert notices[0].type == ops.pebble.NoticeType.CHANGE_UPDATE
@@ -990,24 +984,35 @@ ID   User    Type           Key                    First                 Repeate
         assert notices[1].key == "demo.example.com/test"
         assert notices[1].user_id == 1000
         assert notices[1].occurrences == 10
-        # The detail fetch supplies what the table cannot.
         assert notices[1].last_data == {"a": "1", "b": "2"}
 
+    def test_get_notices_filters(self, mock_subprocess: Mock, client: PebbleCliClient):
+        """Type and key filters are passed as --type/--key flags, not positionally."""
+        mock_subprocess.run.return_value.stdout = '{"notices":[]}'
+
+        client.get_notices(
+            types=[ops.pebble.NoticeType.CUSTOM], keys=["example.com/foo"]
+        )
+
+        call_args = mock_subprocess.run.call_args[0][0]
+        assert call_args[call_args.index("--type") + 1] == "custom"
+        assert call_args[call_args.index("--key") + 1] == "example.com/foo"
+
     def test_get_notices_empty(self, mock_subprocess: Mock, client: PebbleCliClient):
-        """No matching notices returns an empty list without per-ID fetches."""
-        mock_subprocess.run.return_value.stdout = "No matching notices."
+        """No matching notices returns an empty list."""
+        mock_subprocess.run.return_value.stdout = '{"notices":[]}'
 
         assert client.get_notices() == []
         assert mock_subprocess.run.call_count == 1
 
     def test_get_notice(self, mock_subprocess: Mock, client: PebbleCliClient):
-        """get_notice() parses the full YAML document into a typed Notice."""
-        mock_subprocess.run.return_value.stdout = self._notice_yaml("12")
+        """get_notice() parses the full JSON document into a typed Notice."""
+        mock_subprocess.run.return_value.stdout = json.dumps(self._notice_dict("12"))
 
         notice = client.get_notice("12")
 
         call_args = mock_subprocess.run.call_args[0][0]
-        assert call_args == ["mock-pebble", "notice", "12"]
+        assert call_args == ["mock-pebble", "notice", "12", "--format", "json"]
         assert notice.id == "12"
         assert notice.user_id == 1000
         assert notice.type == ops.pebble.NoticeType.CUSTOM
