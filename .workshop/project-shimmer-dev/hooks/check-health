@@ -1,0 +1,7 @@
+#!/usr/bin/bash
+# Healthy when a `pebble` binary is on PATH and shimmer imports in the synced env.
+if sudo -H -i -u workshop -- bash -c 'command -v pebble >/dev/null && cd /project && uv run python -c "import shimmer"'; then
+  workshopctl set-health okay
+else
+  workshopctl set-health --code="shimmer-env-broken" error
+fi

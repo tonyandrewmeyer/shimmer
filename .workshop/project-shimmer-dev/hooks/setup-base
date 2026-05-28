@@ -1,0 +1,7 @@
+#!/bin/bash -e
+# Integration tests need a `pebble` binary on PATH with `--format json` support.
+# If the `pebble` plug is unconnected (no built binary mounted), install the
+# candidate snap, which ships that flag (stable soon — bump the channel then).
+if [ ! -e /home/workshop/.local/bin/pebble-src ] && ! command -v pebble >/dev/null; then
+  snap install pebble --classic --channel=latest/candidate
+fi

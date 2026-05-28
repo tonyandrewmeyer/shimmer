@@ -1,0 +1,13 @@
+#!/bin/bash -e
+# Editable install of shimmer + pinned dev tooling (ruff, ty, tox) from the
+# `dev` extra.
+sudo -iu workshop -- bash -lc 'cd /project && uv sync --extra dev'
+
+# If a built pebble was mounted via the `pebble` plug, put it on PATH so the
+# integration tests pick it up ahead of any snap.
+if [ -x /home/workshop/.local/bin/pebble-src ]; then
+  sudo -iu workshop -- bash -lc 'mkdir -p ~/.local/bin && ln -sf ~/.local/bin/pebble-src ~/.local/bin/pebble'
+fi
+
+# Pre-build the tox envs so the first test run is fast.
+sudo -iu workshop -- bash -lc 'cd /project && uv run tox --notest -e unit,lint'

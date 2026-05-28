@@ -1,0 +1,35 @@
+# Workshop definition for developing shimmer (pebble-shimmer).
+#
+# shimmer provides `PebbleCliClient`, a drop-in replacement for
+# `ops.pebble.Client` that drives Pebble via the CLI rather than the unix
+# socket. It's a lightweight uv + tox project — no Juju, no K8s, no LXD. The only
+# external dependency is a `pebble` binary on PATH for the integration tests,
+# which assert CLI/socket parity.
+#
+# The structured `--format json` output the client relies on shipped in Pebble's
+# `latest/candidate` snap channel (stable soon), so the in-project SDK installs
+# that snap in setup-base. To test against an unreleased pebble instead, run a
+# pebble dev workshop alongside and connect its built binary:
+#   workshop connect dev/shimmer-dev:pebble <pebble-workshop>/project-pebble-dev:pebble-bin
+name: dev
+base: ubuntu@24.04
+sdks:
+  - name: uv
+  - name: tox
+    channel: latest/stable
+  - name: project-shimmer-dev    # .workshop/project-shimmer-dev/sdk.yaml
+
+  # AI coding agents — uncomment any you want available in this workshop.
+  # - name: claude-code
+  # - name: copilot-cli
+  # - name: pi
+
+actions:
+  unit: |
+    uv run tox -e unit "$@"
+  integration: |
+    uv run tox -e integration "$@"   # needs the `pebble` binary on PATH
+  lint: |
+    uv run tox -e lint
+  format: |
+    uv run tox -e format
