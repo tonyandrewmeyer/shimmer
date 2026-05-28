@@ -52,23 +52,6 @@ from ._process import ExecProcess
 from ._runner import LocalSubprocessRunner, Runner
 
 
-class _NoticeYamlLoader(yaml.SafeLoader):
-    """SafeLoader that leaves RFC3339 timestamps as strings.
-
-    ``pebble notice <id>`` emits YAML whose keys match the Pebble API wire
-    format, so the parsed mapping can be handed straight to
-    ``ops.pebble.Notice.from_dict``. PyYAML's default implicit resolver,
-    however, turns timestamp scalars into ``datetime`` objects, whereas
-    ``from_dict`` expects the raw RFC3339 strings — so we drop that resolver.
-    """
-
-
-_NoticeYamlLoader.yaml_implicit_resolvers = {
-    ch: [(tag, rx) for tag, rx in resolvers if tag != "tag:yaml.org,2002:timestamp"]
-    for ch, resolvers in yaml.SafeLoader.yaml_implicit_resolvers.items()
-}
-
-
 class PebbleCliClient:
     """A drop-in replacement for ops.pebble.Client that uses CLI commands.
 
@@ -829,44 +812,21 @@ class PebbleCliClient:
         if user_id is not None:
             cmd.extend(["--uid", str(user_id)])
         for t in types or []:
-            if isinstance(t, NoticeType):
-                cmd.append(str(t))
-            else:
-                cmd.append(t)
+            cmd.extend(["--type", t.value if isinstance(t, NoticeType) else t])
         for k in keys or []:
             cmd.extend(["--key", k])
 
-        result = self._run_command(cmd)
-        # The ``notices`` table only carries a subset of a notice's fields (no
-        # last-occurred, last-data, or expire-after) and renders timestamps in a
-        # lossy human form, so we use it just to discover the matching IDs and
-        # then fetch each notice in full via ``get_notice`` (which parses the
-        # complete YAML representation). The first whitespace-delimited column is
-        # the numeric ID; the remaining columns may contain spaces.
-        # Output looks like:
-        # ID   User    Type           Key                    First               Repeated            Occurrences
-        # 2    public  change-update  2                      today at 06:49 UTC  today at 06:49 UTC  3
-        lines = result.stdout.strip().splitlines()
-        # When there are no matches Pebble prints "No matching notices."; only a
-        # populated result starts with the "ID ..." header row.
-        if not lines or not lines[0].startswith("ID"):
-            return []
-        ids = [line.split(maxsplit=1)[0] for line in lines[1:] if line.strip()]
-        return [self.get_notice(notice_id) for notice_id in ids]
+        # ``--format json`` emits one object per notice with the full set of
+        # fields in the Pebble API wire format, so each entry can be handed
+        # straight to Notice.from_dict (no per-ID detail fetch needed).
+        data = self._run_json(cmd)
+        return [Notice.from_dict(notice) for notice in data["notices"]]
 
     def get_notice(self, id: str) -> Notice:
         """Get a specific notice by ID."""
-        result = self._run_command(["notice", id])
-        # ``pebble notice <id>`` emits a YAML document whose keys match the
-        # Pebble API wire format, so it can be handed to Notice.from_dict.
-        # Output looks like:
-        #   id: "12"
-        #   user-id: 1000
-        #   type: custom
-        #   key: example.com/foo
-        #   first-occurred: 2026-05-22T11:31:08.571903021Z
-        #   ...
-        data = yaml.load(result.stdout, Loader=_NoticeYamlLoader)
+        # ``pebble notice <id> --format json`` emits the notice in the Pebble
+        # API wire format, so it can be handed straight to Notice.from_dict.
+        data = self._run_json(["notice", id])
         return Notice.from_dict(data)
 
     def notify(
