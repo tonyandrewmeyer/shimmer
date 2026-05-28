@@ -5,7 +5,7 @@ A 100% compatible, drop-in replacement for `ops.pebble.Client` that drives
 the unix socket — for environments where the socket isn't reachable (such as a
 Rock or a Juju container).
 
-![Shimmer parity demo](demo.gif)
+![Shimmer parity demo](https://raw.githubusercontent.com/tonyandrewmeyer/shimmer/main/demo.gif)
 
 <sub>The same deploy-and-verify routine run over `ops.pebble.Client` (unix
 socket, left) and `shimmer.PebbleCliClient` (CLI, right) — identical results.</sub>

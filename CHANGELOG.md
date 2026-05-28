@@ -1,3 +1,9 @@
+# Unreleased
+
+Bug fixes and packaging:
+
+- Python 3.14 is now officially supported and tested.
+
 # 2026-05-28
 
 Features:
