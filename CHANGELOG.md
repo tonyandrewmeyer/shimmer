@@ -1,3 +1,18 @@
+# 2026-05-28
+
+Features:
+
+`get_notices()` and `get_notice()` now use Pebble's structured `--format json`
+output instead of scraping the human-readable table and parsing per-notice
+YAML. `get_notices()` reads every matching notice in a single call (it no
+longer makes a follow-up call per notice).
+
+Bug fixes and packaging:
+
+- `get_notices(types=...)` now filters correctly. It previously passed the
+  type as a positional argument, which newer Pebble rejects with "too many
+  arguments"; types are now passed via the `--type` flag.
+
 # 2026-05-22
 
 Features:
