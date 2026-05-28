@@ -1,6 +1,16 @@
-# 2026-05-28
+# Unreleased
 
 Features:
+
+- `PebbleCliClient` now accepts an optional `runner=` keyword argument on
+  construction. The `Runner` protocol (two methods: `run` and `popen`,
+  mirroring `subprocess.run` / `subprocess.Popen`) lets callers swap out how
+  the `pebble` binary is invoked — for example, by prefixing the argv with
+  `juju ssh --container=<c> <unit> --` to drive a remote Pebble. The default
+  behaviour is unchanged: when `runner` is omitted, `LocalSubprocessRunner`
+  is used, which reproduces the previous local-subprocess behaviour
+  byte-for-byte. Both `Runner` and `LocalSubprocessRunner` are exported from
+  the top-level `shimmer` package.
 
 `get_notices()` and `get_notice()` now use Pebble's structured `--format json`
 output instead of scraping the human-readable table and parsing per-notice

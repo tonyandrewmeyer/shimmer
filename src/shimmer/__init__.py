@@ -18,11 +18,14 @@ from ops.pebble import (
 from ._client import PebbleCliClient
 from ._process import ExecProcess
 from ._protocol import PebbleClientProtocol
+from ._runner import LocalSubprocessRunner, Runner
 
 __all__ = [
     "PebbleCliClient",
     "ExecProcess",
+    "LocalSubprocessRunner",
     "PebbleClientProtocol",
+    "Runner",
     # Re-exported ops.pebble exceptions.
     "Error",
     "APIError",
