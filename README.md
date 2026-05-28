@@ -1,369 +1,140 @@
-# Shimmer - shiny Pebble client
+# Shimmer — a shiny Pebble client
 
-A 100% compatible drop-in replacement for `ops.pebble.Client` that uses the Pebble CLI tool instead of socket communication.
+A 100% compatible, drop-in replacement for `ops.pebble.Client` that drives
+[Pebble](https://documentation.ubuntu.com/pebble) through its **CLI** instead of
+the unix socket — for environments where the socket isn't reachable (such as a
+Rock or a Juju container).
+
+![Shimmer parity demo](demo.gif)
+
+<sub>The same deploy-and-verify routine run over `ops.pebble.Client` (unix
+socket, left) and `shimmer.PebbleCliClient` (CLI, right) — identical results.</sub>
 
 ## Overview
 
-Shimmer provides `PebbleCliClient`, a class that implements the same interface as `ops.pebble.Client` but communicates with Pebble via CLI commands instead of socket communication. This is useful for environments with restricted socket access (such as a Rock or Juju container).
+`PebbleCliClient` implements the same interface as `ops.pebble.Client`: same
+method signatures, same return types, same raised exceptions. Under the hood it
+translates each call into a `pebble` CLI command, parses the output back into the
+same Python objects `ops` returns, and maps CLI errors onto the matching
+exceptions. The contract is **parity** — code written against `ops.pebble.Client`
+should run unchanged against Shimmer.
 
 ## Installation
 
-### Install from PyPI
-
 ```bash
+# From PyPI
 uv pip install pebble-shimmer
-```
 
-### Install development version
-```bash
+# Development version
 git clone https://github.com/tonyandrewmeyer/shimmer
 cd shimmer
 uv pip install -e .
 ```
 
-## Quick Start
+## Usage
 
-```python
-from shimmer import PebbleCliClient as Client
-
-# Create a client instance:
-client = Client(
-    socket_path="/var/lib/pebble/default/.pebble.socket",  # Optional: for env setup
-    pebble_binary="pebble",  # Path to pebble binary
-    timeout=30.0,  # Default command timeout
-)
-
-# Use exactly like ops.pebble.Client:
-services = client.get_services()
-client.start_services(["myservice"])
-
-# Execute commands:
-process = client.exec(["echo", "hello world"])
-stdout, stderr = process.wait_output()
-print(stdout)  # "hello world\n"
-
-# File operations:
-client.push("/path/to/file", "content")
-content = client.pull("/path/to/file").read()
-
-# Layer management
-layer = """
-services:
-  myservice:
-    override: replace
-    command: python3 -m http.server 8080
-    startup: enabled
-"""
-client.add_layer("mylayer", layer)
-client.replan_services()
-```
-
-## Advanced Usage
-
-### Custom Binary Path
-
-```python
-client = PebbleCliClient(pebble_binary="/usr/local/bin/pebble")
-```
-
-### Environment Configuration
-
-```python
-# If using custom Pebble directory:
-client = PebbleCliClient(socket_path="/custom/path/.pebble.socket")
-
-# This automatically sets:
-# PEBBLE=/custom/path
-# PEBBLE_SOCKET=/custom/path/.pebble.socket
-```
-
-### Error Handling
-
-```python
-from shimmer import APIError, ConnectionError, TimeoutError
-
-try:
-    client.start_services(["nonexistent"])
-except APIError as e:
-    print(f"API Error: {e.message} (code: {e.code})")
-except ConnectionError:
-    print("Could not connect to Pebble")
-except TimeoutError:
-    print("Operation timed out")
-```
-
-### Process Execution
-
-```python
-# Simple command:
-process = client.exec(["ls", "-la"])
-stdout, stderr = process.wait_output()
-
-# With environment and options:
-process = client.exec(
-    ["python3", "script.py"],
-    environment={"PYTHONPATH": "/app"},
-    working_dir="/app",
-    timeout=60.0,
-    user="appuser",
-)
-
-# Streaming I/O:
-process = client.exec(["cat"], stdin="Hello World\n")
-stdout, stderr = process.wait_output()
-```
-
-## Architecture
-
-The `PebbleCliClient` works by:
-
-1. **Command Translation** - Converts API calls to CLI commands
-2. **Output Parsing** - Parses CLI output back to Python objects
-3. **Error Mapping** - Maps CLI errors to compatible exceptions
-4. **Process Management** - Handles subprocess execution and I/O
-
-## Limitations
-
-While this client aims for 100% compatibility, there are some limitations due to CLI constraints:
-
-1. **Performance** - CLI calls have higher overhead than socket communication
-2. **Concurrency** - Each operation spawns a new process
-3. **Streaming** - Some streaming operations may be buffered
-4. **Platform** - Requires Pebble binary in PATH or specified location
-
-Other minor limitations:
-
-- `replan_services()`, `start_services()`, `stop_services()`, and `restart_services()` are only able to return the change ID if no timeout is set.
-- `notify()` only supports custom notices.
-- `autostart_services()` is an alias for `replan()` (possibly we could fix this by getting the current state?)
-- `ack_warnings()` is yet to be implemented.
-- `get_warnings()` is only implemented for the 'no warnings' case; parsing a non-empty warnings list raises `NotImplementedError`.
-
-`get_services()`, `get_checks()`, `list_files()`, `get_changes()`,
-`get_change()`, and `get_identities()` use Pebble's structured `--format json`
-output, so they return the same rich data as `ops.pebble.Client` (including
-change `kind`/`tasks`/`err`, check thresholds, real file ownership, and local
-identity user IDs). This requires a Pebble build that supports `--format` on
-read commands.
-
-## Comparison with ops.pebble.Client
-
-| Feature | ops.pebble.Client | PebbleCliClient |
-|---------|------------------|-----------------|
-| Communication | Unix socket | CLI commands |
-| Performance | High | Moderate |
-| Setup | Requires socket access | Requires binary |
-| Compatibility | Native | 100% API compatible |
-| Dependencies | ops library | ops library + CLI |
-| Use Cases | Production charms | Testing, development, debugging |
-
-## Examples
-
-### Service Management
+Construct the client, then use it exactly like `ops.pebble.Client` — the methods,
+arguments, return types, and exceptions are the same:
 
 ```python
 from shimmer import PebbleCliClient as Client
 
 client = Client()
-
-# Get all services:
-services = client.get_services()
-for service in services:
-    print(f"{service.name}: {service.current}")
-
-# Start specific services:
-change_id = client.start_services(["web", "db"])
-print(f"Started services, change: {change_id}")
-
-# Wait for change to complete:
-change = client.wait_change(change_id)
-print(f"Change {change.id} status: {change.status}")
+client.replan_services()
+for service in client.get_services():
+    print(service.name, service.current.value)
 ```
 
-### File Management
+The whole point is that there's nothing new to learn: the full method surface is
+documented by [`ops.pebble.Client`](https://ops.readthedocs.io/en/latest/reference/pebble.html).
+Swapping `ops.pebble.Client` for `shimmer.PebbleCliClient` is the only change.
+
+The constructor is where Shimmer differs, since it talks to a binary rather than
+a socket:
 
 ```python
-# Create directory structure:
-client.make_dir("/app/config", make_parents=True, permissions=0o755)
-
-# Write configuration file:
-config = """
-server:
-  port: 8080
-  host: 0.0.0.0
-"""
-client.push("/app/config/server.yaml", config)
-
-# Read file back:
-content = client.pull("/app/config/server.yaml").read()
-print(content)
-
-# List directory contents:
-files = client.list_files("/app/config")
-for file in files:
-    print(f"{file.name} ({file.type})")
-```
-
-### Layer Management
-
-```python
-# Define service layer:
-layer = {
-    "summary": "Web application layer",
-    "description": "Defines the web application service",
-    "services": {
-        "webapp": {
-            "override": "replace",
-            "summary": "Web application",
-            "command": "python3 -m uvicorn app:main --host 0.0.0.0 --port 8080",
-            "startup": "enabled",
-            "environment": {
-                "PYTHONPATH": "/app"
-            },
-            "user": "webapp",
-            "group": "webapp",
-        }
-    },
-    "checks": {
-        "webapp-health": {
-            "override": "replace",
-            "level": "alive",
-            "http": {"url": "http://localhost:8080/health"},
-            "period": "10s",
-            "timeout": "3s",
-            "threshold": 3,
-        }
-    }
-}
-
-# Add and apply layer:
-client.add_layer("webapp", layer)
-change_id = client.replan_services()
-
-# Wait for services to start:
-client.wait_change(change_id)
-
-# Check service status:
-services = client.get_services(["webapp"])
-print(f"webapp status: {services[0].current}")
-```
-
-### Command Execution
-
-```python
-# Execute simple command:
-process = client.exec(["whoami"])
-stdout, stderr = process.wait_output()
-print(f"Running as: {stdout.strip()}")
-
-# Execute with service context:
-process = client.exec(
-    ["python3", "-c", "import os; print(os.getcwd())"],
-    service_context="webapp"
+client = Client(
+    socket_path="/var/lib/pebble/default/.pebble.socket",  # sets PEBBLE / PEBBLE_SOCKET
+    pebble_binary="/snap/bin/pebble",  # path to the pebble binary (default: "pebble")
+    timeout=5.0,  # default per-command timeout in seconds
 )
-stdout, stderr = process.wait_output()
-print(f"Service working directory: {stdout.strip()}")
-
-# Execute interactive command:
-process = client.exec(["python3", "-c", "print(input('Name: '))"])
-process.stdin.write("Alice\n")
-process.stdin.close()
-stdout, stderr = process.wait_output()
-print(f"Output: {stdout.strip()}")
 ```
 
-### Health Checks
+`socket_path` doesn't open a socket — it points Shimmer at the daemon by setting
+`PEBBLE` (its parent directory) and `PEBBLE_SOCKET` for the CLI. For drop-in
+parity the constructor also accepts `opener` and `base_url`, but those only
+configure the socket transport, so Shimmer accepts and ignores them. The
+`ops.pebble` exceptions are re-exported from `shimmer` for convenience, but they
+are the same objects, so `except ops.pebble.APIError` keeps working too.
 
-```python
-# Get all checks:
-checks = client.get_checks()
-for check in checks:
-    print(f"{check.name}: {check.status} ({check.level})")
+## Demo and verification
 
-# Start specific checks:
-started = client.start_checks(["webapp-health"])
-print(f"Started checks: {started}")
+The GIF above is a recording of [`demo.md`](demo.md) — a
+[Showboat](https://pypi.org/project/showboat/) document that runs one
+deploy-and-verify routine against the **real socket client**, then the **same
+code** against Shimmer, and `diff`s the two outputs to prove they're identical.
+It's reproducible:
 
-# Monitor check status:
-import time
-for _ in range(5):
-    checks = client.get_checks(names=["webapp-health"])
-    if checks:
-        check = checks[0]
-        print(f"Check status: {check.status}, failures: {check.failures}")
-    time.sleep(2)
+```bash
+uv run python demo.py            # rebuild demo.md (verifies parity live)
+uv run python demo.py --record   # re-record demo.cast (needs tmux + asciinema)
+agg demo.cast demo.gif           # regenerate the GIF from the cast
 ```
 
-### Notice Management
+Parity is also exercised in CI by `tests/integration/test_parity.py`, which runs
+the same operations through both clients and asserts equal results.
 
-```python
-# Get recent notices:
-notices = client.get_notices()
-for notice in notices:
-    print(f"{notice.type}: {notice.key} (occurred: {notice.occurrences})")
+## Limitations and parity notes
 
-# Create custom notice:
-notice_id = client.notify(
-    type="custom",
-    key="myapp.com/deployment",
-    data={"version": "1.2.3", "environment": "production"}
-)
-print(f"Created notice: {notice_id}")
+CLI invocation is the source of every limitation here — each call spawns a
+`pebble` process, so there's more per-call overhead than the socket transport,
+and some streaming is buffered rather than incremental.
 
-# Get specific notice:
-notice = client.get_notice(notice_id)
-print(f"Notice data: {notice.last_data}")
-```
+A few methods can't fully match the socket client yet:
+
+- `replan_services()`, `start_services()`, `stop_services()`, and
+  `restart_services()` return the change ID only when no timeout is set.
+- `notify()` supports custom notices only.
+- `autostart_services()` is currently an alias for `replan()`.
+- `ack_warnings()` is not yet implemented.
+- `get_warnings()` is implemented for the "no warnings" case only; parsing a
+  non-empty list raises `NotImplementedError`.
+
+`get_services()`, `get_checks()`, `list_files()`, `get_changes()`,
+`get_change()`, and `get_identities()` use Pebble's structured `--format json`
+output, so they return the same rich data as `ops.pebble.Client` (change
+`kind`/`tasks`/`err`, check thresholds, real file ownership, local identity user
+IDs). This requires a Pebble build that supports `--format` on read commands.
+
+## Comparison with `ops.pebble.Client`
+
+| | `ops.pebble.Client` | `PebbleCliClient` |
+|---|---|---|
+| Transport | Unix socket | `pebble` CLI |
+| Requires | Socket access | `pebble` binary |
+| Performance | Higher | Moderate (per-call process spawn) |
+| API | Native | 100% compatible |
 
 ## Troubleshooting
 
-### Common Issues
+**`Pebble binary not found`** — pass the full path:
+`Client(pebble_binary="/snap/bin/pebble")`.
 
-1. **"Pebble binary not found"**
-   ```python
-   # Specify full path to pebble
-   client = PebbleCliClient(pebble_binary="/snap/bin/pebble")
-   ```
+**`Connection error`** — confirm the daemon is up and `PEBBLE` points at its home
+directory (or pass `socket_path=`); check `pebble version`.
 
-2. **"Permission denied"**
-   ```bash
-   # Ensure user has access to Pebble directory
-   sudo chown -R $USER:$USER $PEBBLE
-   ```
-
-3. **"Connection error"**
-   ```python
-   # Check if Pebble is running
-   import subprocess
-   result = subprocess.run(["pebble", "version"], capture_output=True)
-   print(result.stdout)
-   ```
-
-### Debugging
-
-Enable debug logging to see CLI commands:
+**See the commands Shimmer runs** — enable debug logging:
 
 ```python
 import logging
 logging.basicConfig(level=logging.DEBUG)
-
-# Commands will be logged before execution:
-client = PebbleCliClient()
-services = client.get_services()
 ```
 
-## Contributing
+## More
 
-Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
-
-## Changelog
-
-See [CHANGELOG.md](CHANGELOG.md) for version history and changes.
-
-## Related Projects
-
-- [ops](https://ops.readthedocs.io) - The operator framework
-- [pebble](https://documentation.ubuntu.com/pebble) - The Pebble service manager
-- [juju](https://juju.is) - Juju
-- [charmcraft](https://canonical-charmcraft.readthedocs-hosted.com) - Juju charm development tools
-- [rockcraft](https://documentation.ubuntu.com/rockcraft) - Rock development tools
+- [CONTRIBUTING.md](CONTRIBUTING.md) — contribution guidelines
+- [CHANGELOG.md](CHANGELOG.md) — version history
+- Related: [ops](https://ops.readthedocs.io) ·
+  [pebble](https://documentation.ubuntu.com/pebble) · [juju](https://juju.is) ·
+  [charmcraft](https://canonical-charmcraft.readthedocs-hosted.com) ·
+  [rockcraft](https://documentation.ubuntu.com/rockcraft)
