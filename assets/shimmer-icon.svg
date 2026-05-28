@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Shimmer">
+  <title>Shimmer</title>
+  <defs>
+    <linearGradient id="pebble" gradientUnits="userSpaceOnUse" x1="130" y1="150" x2="420" y2="430">
+      <stop offset="0" stop-color="#F9A83F"/>
+      <stop offset="0.45" stop-color="#E95420"/>
+      <stop offset="1" stop-color="#B5360F"/>
+    </linearGradient>
+    <radialGradient id="shine" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="depth" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#6E1E06" stop-opacity="0.45"/>
+      <stop offset="1" stop-color="#6E1E06" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#FFF6E9" stop-opacity="0.85"/>
+      <stop offset="1" stop-color="#FFF6E9" stop-opacity="0"/>
+    </radialGradient>
+    <path id="stone" d="M 95 290 C 95 205, 175 150, 270 150 C 350 150, 425 200, 425 285 C 425 365, 345 425, 245 425 C 160 425, 95 370, 95 290 Z"/>
+    <clipPath id="pclip"><use href="#stone"/></clipPath>
+  </defs>
+
+  <!-- pebble body -->
+  <use href="#stone" fill="url(#pebble)"/>
+
+  <!-- shading + shimmer glow, clipped to the pebble so nothing spills onto the background -->
+  <g clip-path="url(#pclip)">
+    <ellipse cx="256" cy="362" rx="150" ry="92" fill="url(#depth)"/>
+    <ellipse cx="205" cy="228" rx="118" ry="82" fill="url(#shine)" transform="rotate(-18 205 228)"/>
+    <circle cx="318" cy="240" r="104" fill="url(#glow)"/>
+    <circle cx="366" cy="196" r="40" fill="url(#glow)"/>
+    <circle cx="352" cy="302" r="26" fill="url(#glow)"/>
+  </g>
+
+  <!-- shimmer sparkles -->
+  <path d="M 318 168 Q 318 240 390 240 Q 318 240 318 312 Q 318 240 246 240 Q 318 240 318 168 Z" fill="#FFF6E9"/>
+  <path d="M 366 170 Q 366 196 392 196 Q 366 196 366 222 Q 366 196 340 196 Q 366 196 366 170 Z" fill="#FFF6E9"/>
+  <path d="M 352 287 Q 352 302 367 302 Q 352 302 352 317 Q 352 302 337 302 Q 352 302 352 287 Z" fill="#FFF6E9"/>
+</svg>
