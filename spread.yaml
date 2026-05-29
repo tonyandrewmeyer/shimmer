@@ -79,7 +79,7 @@ exclude:
   - .venv
   - htmlcov
 
-path: /root/shimmer
+path: /home/spread/shimmer
 
 prepare: |
   snap refresh --hold
