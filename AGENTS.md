@@ -30,9 +30,10 @@ If you land a fix and the changelog wasn't touched, that's a miss — add it.
 
 ## Development workflow
 
-- Use **`uv`**. `uv sync --extra dev` for a dev environment.
+- Use **`uv`**. `uv sync` for a dev environment (the `dev` dependency group is
+  installed automatically).
 - **`ty`** is the type checker (not pyright/mypy). **`ruff`** does lint +
-  format. Both are pinned in the `dev` extra and run through `tox`/`uv run`, so
+  format. Both are pinned in the `dev` group and run through `tox`/`uv run`, so
   every environment uses identical versions.
 - Common commands:
   - `tox -e lint` — ruff check + ruff format --check + ty check
@@ -47,10 +48,10 @@ If you land a fix and the changelog wasn't touched, that's a miss — add it.
 - Unit tests (`tests/unit/`) mock the CLI and need no Pebble.
 - Integration tests (`tests/integration/`) shell out to a real `pebble` binary
   and assert parity against the socket client.
-- **Temporary:** CI builds Pebble from `master` because the structured
-  `--format json` output the client relies on for some read commands isn't in a
-  released Pebble yet. Switch back to `snap install pebble` once a release ships
-  it (see the note in `.github/workflows/ci.yaml`).
+- CI installs Pebble from the `latest/candidate` snap channel, which ships the
+  structured `--format json` output the client relies on for some read commands.
+  Bump to `latest/stable` once that release is promoted (see the note in
+  `.github/workflows/ci.yaml`).
 
 ## CI, merging, and supply chain
 

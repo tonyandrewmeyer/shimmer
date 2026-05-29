@@ -1,0 +1,25 @@
+# In-project SDK for developing shimmer. Consumed as `project-shimmer-dev`.
+# In-project SDKs have no build-time features (no base/build-base/platforms/
+# parts) — they're configured entirely via the hooks under hooks/.
+#
+# Unit tests (tests/unit/) mock the CLI and need no Pebble; integration tests
+# (tests/integration/) shell out to a real `pebble` binary on PATH and assert
+# parity against the socket client. The `--format json` output the client
+# relies on shipped in Pebble's latest/candidate snap channel, which setup-base
+# installs when the `pebble` plug is unconnected.
+#
+# Relies on the `uv` SDK being present in the workshop (tox comes from the
+# project's `dev` extra, run via `uv run tox`); ~/.cache/uv is persisted by uv.
+name: shimmer-dev
+version: "0"
+summary: In-project setup for developing shimmer
+
+# Optional: consume a `pebble` binary exposed by a pebble dev workshop, for the
+# integration tests. Bind project-shimmer-dev:pebble to project-pebble-dev:pebble-bin in
+# the workshop definition if you run a pebble workshop alongside (e.g. to test
+# against an unreleased pebble). Without it, setup-base installs the candidate
+# snap.
+plugs:
+  pebble:
+    interface: mount
+    workshop-target: /home/workshop/.local/bin/pebble-src

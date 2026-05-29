@@ -41,20 +41,12 @@ jobs:
       with:
         python-version: ${{ matrix.python-version }}
 
-    # TEMPORARY: build Pebble from its master branch. The structured
-    # `--format json` flag the client relies on is not in any released Pebble
-    # yet (latest is v1.30.1); it only exists on master. Switch back to
-    # `snap install pebble --classic` once a release ships that flag.
-    - name: Set up Go
-      uses: actions/setup-go@v6
-      with:
-        go-version: stable
-
-    - name: Install Pebble from master (for integration tests)
+    # The structured `--format json` flag the client relies on shipped in the
+    # candidate channel (stable soon); bump this to `latest/stable` once it lands.
+    - name: Install Pebble (for integration tests)
       run: |
-        go install github.com/canonical/pebble/cmd/pebble@master
-        echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
-        "$(go env GOPATH)/bin/pebble" version --client
+        sudo snap install pebble --classic --channel=latest/candidate
+        pebble version --client
 
     - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b  # v8.1.0
 
