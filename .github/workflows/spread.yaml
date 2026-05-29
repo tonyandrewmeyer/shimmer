@@ -34,7 +34,7 @@ jobs:
 
       - name: Install spread
         run: |
-          go install github.com/snapcore/spread/cmd/spread@latest
+          go install github.com/canonical/spread/cmd/spread@latest
           echo "$HOME/go/bin" >> $GITHUB_PATH
 
       - name: Generate matrix list
@@ -66,7 +66,7 @@ jobs:
 
       - name: Install spread
         run: |
-          go install github.com/snapcore/spread/cmd/spread@latest
+          go install github.com/canonical/spread/cmd/spread@latest
           echo "$HOME/go/bin" >> $GITHUB_PATH
 
       - name: Run spread suite
