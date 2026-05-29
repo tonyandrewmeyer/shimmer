@@ -7,20 +7,21 @@ systems:
   - ubuntu-24.04
 
 prepare: |
-  snap install --channel=6/stable lxd
-  lxd init --auto
-  snap install --classic workshop
+  sudo snap install --channel=6/stable lxd
+  sudo lxd init --auto
+  sudo adduser spread lxd
+  sudo snap install --classic workshop
 
 execute: |
   pushd "$SPREAD_PATH"
 
   # Build the Workshop dev environment: installs pebble, syncs uv deps,
   # pre-builds tox envs, and verifies health.
-  workshop launch
+  sg lxd -c 'workshop launch'
 
   # Exercise the SDK actions that contributors actually run.
-  workshop run dev -- unit
-  workshop run dev -- lint
+  sg lxd -c 'workshop run dev -- unit'
+  sg lxd -c 'workshop run dev -- lint'
 
   popd
 

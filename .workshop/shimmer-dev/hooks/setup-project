@@ -1,7 +1,6 @@
 #!/bin/bash -e
-# Editable install of shimmer + pinned dev tooling (ruff, ty, tox) from the
-# `dev` extra.
-sudo -iu workshop -- bash -lc 'cd /project && uv sync --extra dev'
+# Install shimmer + pinned dev tooling (ruff, ty, tox) from the `dev` group.
+sudo -iu workshop -- bash -lc 'cd /project && uv sync'
 
 # If a built pebble was mounted via the `pebble` plug (a real executable file,
 # not the empty mount-target dir of an unconnected plug), symlink it onto PATH.
