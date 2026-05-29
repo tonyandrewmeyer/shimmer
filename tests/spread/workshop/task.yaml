@@ -1,0 +1,39 @@
+summary: Exercise PebbleCliClient end-to-end against a live Pebble daemon
+
+systems:
+  - ubuntu-24.04
+
+execute: |
+  pushd "$SPREAD_PATH"
+
+  # Start a Pebble daemon in hold mode (no autostart) for the workshop exercises
+  export PEBBLE=/tmp/shimmer-workshop
+  mkdir -p "$PEBBLE/layers"
+
+  pebble run --hold &
+  PEBBLE_PID=$!
+
+  # Give the daemon a moment to bind its socket
+  for i in $(seq 1 20); do
+    pebble version 2>/dev/null && break || true
+    sleep 0.5
+  done
+
+  # Exercise the client via the demo script: deploy a layer, start a service,
+  # run checks, exec a command, and push/pull a file.
+  uv run python3 demo.py --client socket
+  uv run python3 demo.py --client cli
+
+  # Verify that both clients produce the same results
+  if [ -f /tmp/shimmer-parity/socket.txt ] && [ -f /tmp/shimmer-parity/cli.txt ]; then
+    diff /tmp/shimmer-parity/socket.txt /tmp/shimmer-parity/cli.txt
+  fi
+
+  kill "$PEBBLE_PID" || true
+  wait "$PEBBLE_PID" 2>/dev/null || true
+
+  popd
+
+restore: |
+  kill "$(cat /tmp/shimmer-workshop/.pebble.pid 2>/dev/null)" 2>/dev/null || true
+  rm -rf /tmp/shimmer-workshop /tmp/shimmer-parity

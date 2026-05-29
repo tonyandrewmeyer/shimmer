@@ -1,0 +1,19 @@
+summary: Run unit and integration tests against a real Pebble installation
+
+systems:
+  - ubuntu-24.04
+
+execute: |
+  pushd "$SPREAD_PATH"
+
+  # Set up the Pebble directory for integration tests
+  export PEBBLE=/tmp/pebble-test
+  mkdir -p "$PEBBLE/layers"
+
+  # Run unit tests (no Pebble required, exercises the full mock-based suite)
+  uv run tox -e unit
+
+  # Run integration tests against the real Pebble binary installed via snap
+  uv run tox -e integration
+
+  popd
