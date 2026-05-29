@@ -98,7 +98,7 @@ prepare: |
   GOPATH=/tmp/spread-gopath go install github.com/canonical/pebble/cmd/pebble@master
   sudo install -m 755 /tmp/spread-gopath/bin/pebble /usr/local/bin/pebble
 
-  uv sync --extra dev
+  uv sync
 
   popd
 
