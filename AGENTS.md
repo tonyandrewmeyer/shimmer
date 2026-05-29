@@ -30,9 +30,10 @@ If you land a fix and the changelog wasn't touched, that's a miss — add it.
 
 ## Development workflow
 
-- Use **`uv`**. `uv sync --extra dev` for a dev environment.
+- Use **`uv`**. `uv sync` for a dev environment (the `dev` dependency group is
+  installed automatically).
 - **`ty`** is the type checker (not pyright/mypy). **`ruff`** does lint +
-  format. Both are pinned in the `dev` extra and run through `tox`/`uv run`, so
+  format. Both are pinned in the `dev` group and run through `tox`/`uv run`, so
   every environment uses identical versions.
 - Common commands:
   - `tox -e lint` — ruff check + ruff format --check + ty check
