@@ -4,7 +4,7 @@ summary: Verify the Workshop dev SDK launches and the unit/lint actions pass
 # LXD VM the lxd backend already creates.  Run this test only on the
 # github-ci backend, where LXD can be installed on bare metal.
 systems:
-  - github-ci:ubuntu-24.04
+  - ubuntu-24.04
 
 prepare: |
   snap install --channel=6/stable lxd
