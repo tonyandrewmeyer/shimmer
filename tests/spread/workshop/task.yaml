@@ -1,39 +1,30 @@
-summary: Exercise PebbleCliClient end-to-end against a live Pebble daemon
+summary: Verify the Workshop dev SDK launches and the unit/lint actions pass
 
+# workshop launch creates LXD VMs; nested VMs are not supported inside the
+# LXD VM the lxd backend already creates.  Run this test only on the
+# github-ci backend, where LXD can be installed on bare metal.
 systems:
-  - ubuntu-24.04
+  - github-ci:ubuntu-24.04
+
+prepare: |
+  snap install --channel=6/stable lxd
+  lxd init --auto
+  snap install --classic workshop
 
 execute: |
   pushd "$SPREAD_PATH"
 
-  # Start a Pebble daemon in hold mode (no autostart) for the workshop exercises
-  export PEBBLE=/tmp/shimmer-workshop
-  mkdir -p "$PEBBLE/layers"
+  # Build the Workshop dev environment: installs pebble, syncs uv deps,
+  # pre-builds tox envs, and verifies health.
+  workshop launch
 
-  pebble run --hold &
-  PEBBLE_PID=$!
-
-  # Give the daemon a moment to bind its socket
-  for i in $(seq 1 20); do
-    pebble version 2>/dev/null && break || true
-    sleep 0.5
-  done
-
-  # Exercise the client via the demo script: deploy a layer, start a service,
-  # run checks, exec a command, and push/pull a file.
-  uv run python3 demo.py --client socket
-  uv run python3 demo.py --client cli
-
-  # Verify that both clients produce the same results
-  if [ -f /tmp/shimmer-parity/socket.txt ] && [ -f /tmp/shimmer-parity/cli.txt ]; then
-    diff /tmp/shimmer-parity/socket.txt /tmp/shimmer-parity/cli.txt
-  fi
-
-  kill "$PEBBLE_PID" || true
-  wait "$PEBBLE_PID" 2>/dev/null || true
+  # Exercise the SDK actions that contributors actually run.
+  workshop run dev -- unit
+  workshop run dev -- lint
 
   popd
 
 restore: |
-  kill "$(cat /tmp/shimmer-workshop/.pebble.pid 2>/dev/null)" 2>/dev/null || true
-  rm -rf /tmp/shimmer-workshop /tmp/shimmer-parity
+  pushd "$SPREAD_PATH"
+  workshop remove 2>/dev/null || true
+  popd
