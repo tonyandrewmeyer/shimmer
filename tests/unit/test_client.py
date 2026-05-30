@@ -701,17 +701,100 @@ class TestPebbleCliClient:
         assert not os.path.exists(captured["path"])
 
     def test_push_string(self, mock_subprocess: Mock, client: PebbleCliClient):
-        """Test pushing string content."""
-        with patch("tempfile.NamedTemporaryFile") as mock_temp:
-            mock_file = Mock()
-            mock_file.name = "/tmp/test"
-            mock_temp.return_value.__enter__.return_value = mock_file
+        """push() with a string encodes to bytes and passes a temp path to pebble."""
+        client.push("/path/file", "content", make_dirs=True)
 
-            client.push("/path/file", "content", make_dirs=True)
-
-        mock_file.write.assert_called_once()
         call_args = mock_subprocess.run.call_args[0][0]
-        assert call_args == ["mock-pebble", "push", "/tmp/test", "/path/file", "-p"]
+        # argv shape: [binary, "push", <tmp>, <dest>, flags...]
+        assert call_args[0] == "mock-pebble"
+        assert call_args[1] == "push"
+        assert call_args[3] == "/path/file"
+        assert call_args[4] == "-p"
+
+    # --- FileTransferRunner (remote runner) tests ---
+
+    @pytest.fixture
+    def transfer_runner(self):
+        """A mock FileTransferRunner for testing remote push/pull."""
+        runner = Mock()
+        runner.upload_temp = Mock(return_value="/remote/tmp/staged")
+        runner.download_temp = Mock(return_value=b"remote content")
+        runner.cleanup_temp = Mock()
+        return runner
+
+    @pytest.fixture
+    def remote_client(self, transfer_runner):
+        """PebbleCliClient backed by a mock FileTransferRunner."""
+        return PebbleCliClient(pebble_binary="mock-pebble", runner=transfer_runner)
+
+    def test_pull_text_remote_runner(self, remote_client, transfer_runner):
+        """pull() via FileTransferRunner returns a StringIO wrapping the downloaded bytes."""
+        result = remote_client.pull("/etc/hostname")
+
+        content = result.read()
+        assert content == "remote content"
+        assert isinstance(content, str)
+        # upload_temp used to create remote staging file
+        transfer_runner.upload_temp.assert_called_once_with(b"")
+        # pebble pull called with the staging path via transfer_runner.run
+        call_args = transfer_runner.run.call_args[0][0]
+        assert call_args == [
+            "mock-pebble",
+            "pull",
+            "/etc/hostname",
+            "/remote/tmp/staged",
+        ]
+        # download_temp fetches the result
+        transfer_runner.download_temp.assert_called_once_with("/remote/tmp/staged")
+        # cleanup called
+        transfer_runner.cleanup_temp.assert_called_once_with("/remote/tmp/staged")
+
+    def test_pull_binary_remote_runner(self, remote_client, transfer_runner):
+        """pull(encoding=None) via FileTransferRunner returns a BytesIO."""
+        result = remote_client.pull("/etc/hostname", encoding=None)
+
+        content = result.read()
+        assert content == b"remote content"
+        assert isinstance(content, bytes)
+
+    def test_pull_error_remote_runner_cleans_up(self, remote_client, transfer_runner):
+        """A failed pull via FileTransferRunner still calls cleanup_temp."""
+        transfer_runner.run.side_effect = subprocess.CalledProcessError(
+            1,
+            "cmd",
+            stderr="error: stat /etc/hostname: not-found - open /remote/tmp/staged: no such file or directory",
+        )
+
+        with pytest.raises(ops.pebble.PathError):
+            remote_client.pull("/etc/hostname")
+
+        transfer_runner.cleanup_temp.assert_called_once_with("/remote/tmp/staged")
+
+    def test_push_string_remote_runner(self, remote_client, transfer_runner):
+        """push() via FileTransferRunner uploads content then calls pebble push."""
+        remote_client.push("/etc/hosts", "127.0.0.1 localhost\n")
+
+        transfer_runner.upload_temp.assert_called_once_with(b"127.0.0.1 localhost\n")
+        call_args = transfer_runner.run.call_args[0][0]
+        assert call_args == ["mock-pebble", "push", "/remote/tmp/staged", "/etc/hosts"]
+        transfer_runner.cleanup_temp.assert_called_once_with("/remote/tmp/staged")
+
+    def test_push_error_remote_runner_cleans_up(self, remote_client, transfer_runner):
+        """A failed push via FileTransferRunner still calls cleanup_temp."""
+        transfer_runner.run.side_effect = subprocess.CalledProcessError(
+            1, "cmd", stderr="error: stat /nonexistent: no such file or directory"
+        )
+
+        with pytest.raises(ops.pebble.PathError):
+            remote_client.push("/nonexistent/file", "content")
+
+        transfer_runner.cleanup_temp.assert_called_once_with("/remote/tmp/staged")
+
+    def test_push_cleanup_always_called(self, remote_client, transfer_runner):
+        """cleanup_temp is called even when cleanup is the only thing left to do."""
+        remote_client.push("/etc/hosts", b"content")
+
+        transfer_runner.cleanup_temp.assert_called_once_with("/remote/tmp/staged")
 
     def test_exec_simple(self, mock_subprocess: Mock, client: PebbleCliClient):
         """Test simple command execution."""
