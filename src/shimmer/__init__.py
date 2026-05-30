@@ -18,11 +18,12 @@ from ops.pebble import (
 from ._client import PebbleCliClient
 from ._process import ExecProcess
 from ._protocol import PebbleClientProtocol
-from ._runner import LocalSubprocessRunner, Runner
+from ._runner import FileTransferRunner, LocalSubprocessRunner, Runner
 
 __all__ = [
     "PebbleCliClient",
     "ExecProcess",
+    "FileTransferRunner",
     "LocalSubprocessRunner",
     "PebbleClientProtocol",
     "Runner",

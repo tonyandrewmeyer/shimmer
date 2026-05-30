@@ -1,5 +1,15 @@
 # Unreleased
 
+Features:
+
+- `push` and `pull` now work correctly with remote `Runner` implementations
+  (e.g. `JujuSshRunner`).  Runners that implement the new `FileTransferRunner`
+  protocol — three methods: `upload_temp`, `download_temp`, and `cleanup_temp`
+  — delegate temporary-file staging to the runner rather than assuming a shared
+  filesystem.  `LocalSubprocessRunner` implements `FileTransferRunner`, so
+  existing local-subprocess usage is unchanged.  `FileTransferRunner` is
+  exported from the top-level `shimmer` package.
+
 Bug fixes and packaging:
 
 - Python 3.14 is now officially supported and tested.
@@ -100,4 +110,3 @@ Allow Python 3.11.
 # 2025-07-12
 
 Initial alpha version.
-

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import datetime
 import fnmatch
+import io
 import json
 import os
 import pathlib
@@ -17,7 +18,7 @@ import subprocess
 import tempfile
 import time
 from collections.abc import Iterable, Mapping
-from typing import Any, BinaryIO, NoReturn, TextIO, overload
+from typing import Any, BinaryIO, NoReturn, TextIO, cast, overload
 
 import yaml
 
@@ -49,7 +50,7 @@ from ops.pebble import (
 )
 
 from ._process import ExecProcess
-from ._runner import LocalSubprocessRunner, Runner
+from ._runner import FileTransferRunner, LocalSubprocessRunner, Runner
 
 
 class PebbleCliClient:
@@ -503,16 +504,48 @@ class PebbleCliClient:
         *,
         encoding: str | None = "utf-8",
     ) -> TextIO | BinaryIO:
-        """Read a file from the remote system.
+        """Read a file from the remote system."""
+        if hasattr(self._runner, "upload_temp") and hasattr(
+            self._runner, "download_temp"
+        ):
+            return self._pull_via_runner(
+                cast(FileTransferRunner, self._runner), path, encoding=encoding
+            )
+        return self._pull_local(path, encoding=encoding)
 
-        Returns a readable file object, streaming from disk rather than
-        buffering the whole file in memory. The Pebble CLI writes the fetched
-        file to a path, so we pull into a temp file, open it, then unlink it
-        immediately: on Unix the open handle stays valid until closed, so the
-        data is still readable and the temp file is reclaimed when the caller
-        closes it. This mirrors ops.pebble.Client.pull, which likewise returns
-        an open file object over an unlinked temp file (``newline=""`` serves
-        line endings as-is, matching it).
+    def _pull_via_runner(
+        self,
+        runner: FileTransferRunner,
+        path: str,
+        *,
+        encoding: str | None,
+    ) -> TextIO | BinaryIO:
+        """Pull using the runner's file-transfer methods (remote runner path)."""
+        tmp_path = runner.upload_temp(b"")
+        try:
+            self._run_command(["pull", path, tmp_path])
+            raw = runner.download_temp(tmp_path)
+        except APIError as e:
+            self._raise_path_error(e)
+        finally:
+            runner.cleanup_temp(tmp_path)
+        if encoding is None:
+            return io.BytesIO(raw)
+        return io.StringIO(raw.decode(encoding))
+
+    def _pull_local(
+        self,
+        path: str,
+        *,
+        encoding: str | None,
+    ) -> TextIO | BinaryIO:
+        """Pull via a local temp file (default local-subprocess path).
+
+        The Pebble CLI writes the fetched file to a path, so we pull into a
+        temp file, open it, then unlink it immediately: on Unix the open handle
+        stays valid until closed, so the data is still readable and the temp
+        file is reclaimed when the caller closes it.  This mirrors
+        ops.pebble.Client.pull (``newline=""`` serves line endings as-is).
         """
         fd, tmp_name = tempfile.mkstemp()
         os.close(fd)
@@ -571,14 +604,26 @@ class PebbleCliClient:
         elif group_id is not None:
             cmd.extend(["--gid", str(group_id)])
 
-        with tempfile.NamedTemporaryFile() as tmp_file:
-            tmp_file.write(content)
-            tmp_file.flush()
-            cmd.insert(1, tmp_file.name)
+        if hasattr(self._runner, "upload_temp"):
+            runner = cast(FileTransferRunner, self._runner)
+            tmp_path = runner.upload_temp(content)
             try:
-                self._run_command(cmd)
-            except APIError as e:
-                self._raise_path_error(e)
+                cmd.insert(1, tmp_path)
+                try:
+                    self._run_command(cmd)
+                except APIError as e:
+                    self._raise_path_error(e)
+            finally:
+                runner.cleanup_temp(tmp_path)
+        else:
+            with tempfile.NamedTemporaryFile() as tmp_file:
+                tmp_file.write(content)
+                tmp_file.flush()
+                cmd.insert(1, tmp_file.name)
+                try:
+                    self._run_command(cmd)
+                except APIError as e:
+                    self._raise_path_error(e)
 
     # Exec I/O is str if encoding is provided (the default)
     @overload

@@ -10,7 +10,10 @@ protocol without touching ``PebbleCliClient`` at all.
 
 from __future__ import annotations
 
+import os
+import pathlib
 import subprocess
+import tempfile
 from collections.abc import Mapping
 from typing import IO, Any, Protocol, runtime_checkable
 
@@ -65,6 +68,40 @@ class Runner(Protocol):
         ...
 
 
+@runtime_checkable
+class FileTransferRunner(Runner, Protocol):
+    """Optional extension of ``Runner`` for staging files to pebble's filesystem.
+
+    Implement this on remote runners (e.g. ``JujuSshRunner``) so that
+    ``PebbleCliClient.push`` and ``pull`` can stage content on the remote host
+    rather than a local temp file that the remote pebble process cannot access.
+
+    ``LocalSubprocessRunner`` implements this protocol — local and remote
+    filesystems are the same, so the default behaviour is preserved.
+    """
+
+    def upload_temp(self, content: bytes) -> str:
+        """Write *content* to a temp file accessible to pebble.
+
+        Returns the absolute path that pebble can use as a source (push) or
+        destination (pull).  Call ``cleanup_temp`` when the temp file is no
+        longer needed.
+        """
+        ...
+
+    def download_temp(self, path: str) -> bytes:
+        """Return the bytes stored at *path* on pebble's filesystem."""
+        ...
+
+    def cleanup_temp(self, path: str) -> None:
+        """Remove the temp file at *path* on pebble's filesystem.
+
+        Called after ``upload_temp`` or ``download_temp`` to release the
+        staging file.
+        """
+        ...
+
+
 class LocalSubprocessRunner:
     """Default runner: executes commands as local subprocesses.
 
@@ -110,3 +147,20 @@ class LocalSubprocessRunner:
             text=text,
             env=env,
         )
+
+    def upload_temp(self, content: bytes) -> str:
+        fd, path = tempfile.mkstemp()
+        try:
+            with os.fdopen(fd, "wb") as fh:
+                fh.write(content)
+        except BaseException:
+            pathlib.Path(path).unlink(missing_ok=True)
+            raise
+        return path
+
+    def download_temp(self, path: str) -> bytes:
+        with open(path, "rb") as fh:
+            return fh.read()
+
+    def cleanup_temp(self, path: str) -> None:
+        pathlib.Path(path).unlink(missing_ok=True)
