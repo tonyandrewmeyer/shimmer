@@ -48,7 +48,8 @@ jobs:
         uses: actions/attest@v1
         with:
           subject-path: 'dist/*'
-          sbom-path: 'sbom.cdx.json'
+          predicate-type: 'https://cyclonedx.org/bom'
+          predicate-path: 'sbom.cdx.json'
       - name: Upload SBOM artifact
         uses: actions/upload-artifact@v7
         with:
