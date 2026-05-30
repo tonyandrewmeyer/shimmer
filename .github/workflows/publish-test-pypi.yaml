@@ -1,0 +1,60 @@
+name: Publish to Test PyPI
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  # Gate the release on the full lint + unit + integration suite passing, so
+  # a red CI can never publish to Test PyPI.
+  ci:
+    name: CI
+    uses: ./.github/workflows/ci.yaml
+
+  build-n-publish:
+    name: Build and Publish to Test PyPI
+    needs: ci
+    runs-on: ubuntu-latest
+    environment: publish-test-pypi
+    permissions:
+      id-token: write
+      attestations: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - name: Setup uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b  # v8.1.0
+        with:
+          enable-cache: false  # No build cache in the release job (cache-poisoning hardening).
+      - name: Build
+        run: uvx --with=build python -m build
+      - name: Generate CycloneDX SBOM
+        run: |
+          uv sync --frozen --no-dev
+          uvx --from cyclonedx-bom cyclonedx-py environment .venv \
+            --output-format JSON \
+            --output-file sbom.cdx.json
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: 'dist/*'
+      - name: Attest SBOM
+        uses: actions/attest@v1
+        with:
+          subject-path: 'dist/*'
+          sbom-path: 'sbom.cdx.json'
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: sbom
+          path: sbom.cdx.json
+      - name: Publish
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
