@@ -4,9 +4,8 @@
 #
 # Unit tests (tests/unit/) mock the CLI and need no Pebble; integration tests
 # (tests/integration/) shell out to a real `pebble` binary on PATH and assert
-# parity against the socket client. The `--format json` output the client
-# relies on shipped in Pebble's latest/candidate snap channel, which setup-base
-# installs when the `pebble` plug is unconnected.
+# parity against the socket client. setup-base installs the
+# `latest/stable` pebble snap when the `pebble` plug is unconnected.
 #
 # Relies on the `uv` SDK being present in the workshop (tox comes from the
 # project's `dev` extra, run via `uv run tox`); ~/.cache/uv is persisted by uv.
@@ -17,7 +16,7 @@ summary: In-project setup for developing shimmer
 # Optional: consume a `pebble` binary exposed by a pebble dev workshop, for the
 # integration tests. Bind project-shimmer-dev:pebble to project-pebble-dev:pebble-bin in
 # the workshop definition if you run a pebble workshop alongside (e.g. to test
-# against an unreleased pebble). Without it, setup-base installs the candidate
+# against an unreleased pebble). Without it, setup-base installs the stable
 # snap.
 plugs:
   pebble:

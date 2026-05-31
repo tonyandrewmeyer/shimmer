@@ -92,11 +92,7 @@ prepare: |
 
   sudo snap install astral-uv --classic
 
-  # Pebble's structured --format json output (required by shimmer) is not yet
-  # in any released snap; build from master until a snap release ships it.
-  sudo snap install go --classic
-  GOPATH=/tmp/spread-gopath go install github.com/canonical/pebble/cmd/pebble@master
-  sudo install -m 755 /tmp/spread-gopath/bin/pebble /usr/local/bin/pebble
+  sudo snap install pebble --classic --channel=latest/stable
 
   uv sync
 

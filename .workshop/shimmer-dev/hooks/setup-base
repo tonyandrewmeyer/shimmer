@@ -1,10 +1,9 @@
 #!/bin/bash -e
-# Integration tests need a `pebble` binary on PATH with `--format json` support.
-# When the `pebble` plug is connected, pebble-src is the mounted binary (a
-# regular executable file); setup-project puts it on PATH. When unconnected the
-# mount target is just an empty directory, so install the candidate snap, which
-# ships that flag (stable soon — bump the channel then).
+# Integration tests need a `pebble` binary on PATH. When the `pebble` plug is
+# connected, pebble-src is the mounted binary (a regular executable file);
+# setup-project puts it on PATH. When unconnected the mount target is just an
+# empty directory, so install the stable snap.
 src=/home/workshop/.local/bin/pebble-src
 if [ ! -f "$src" ] || [ ! -x "$src" ]; then
-  snap install pebble --classic --channel=latest/candidate
+  snap install pebble --classic --channel=latest/stable
 fi

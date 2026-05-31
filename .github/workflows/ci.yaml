@@ -41,11 +41,9 @@ jobs:
       with:
         python-version: ${{ matrix.python-version }}
 
-    # The structured `--format json` flag the client relies on shipped in the
-    # candidate channel (stable soon); bump this to `latest/stable` once it lands.
     - name: Install Pebble (for integration tests)
       run: |
-        sudo snap install pebble --classic --channel=latest/candidate
+        sudo snap install pebble --classic --channel=latest/stable
         pebble version --client
 
     - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b  # v8.1.0
