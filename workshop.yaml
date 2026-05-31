@@ -6,10 +6,9 @@
 # external dependency is a `pebble` binary on PATH for the integration tests,
 # which assert CLI/socket parity.
 #
-# The structured `--format json` output the client relies on shipped in Pebble's
-# `latest/candidate` snap channel (stable soon), so the in-project SDK installs
-# that snap in setup-base. To test against an unreleased pebble instead, run a
-# pebble dev workshop alongside and connect its built binary:
+# The in-project SDK installs the `latest/stable` pebble snap in setup-base. To
+# test against an unreleased pebble instead, run a pebble dev workshop
+# alongside and connect its built binary:
 #   workshop connect dev/project-shimmer-dev:pebble <pebble-workshop>/project-pebble-dev:pebble-bin
 name: dev
 base: ubuntu@24.04

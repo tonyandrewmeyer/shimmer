@@ -4,7 +4,7 @@ sudo -iu workshop -- bash -lc 'cd /project && uv sync'
 
 # If a built pebble was mounted via the `pebble` plug (a real executable file,
 # not the empty mount-target dir of an unconnected plug), symlink it onto PATH.
-# ~/.local/bin is first on PATH, so it takes precedence over the candidate snap.
+# ~/.local/bin is first on PATH, so it takes precedence over the stable snap.
 if [ -f /home/workshop/.local/bin/pebble-src ] && [ -x /home/workshop/.local/bin/pebble-src ]; then
   sudo -iu workshop -- bash -lc 'ln -sf ~/.local/bin/pebble-src ~/.local/bin/pebble'
 fi
