@@ -45,7 +45,7 @@ jobs:
         with:
           subject-path: 'dist/*'
       - name: Attest SBOM
-        uses: actions/attest@v1
+        uses: actions/attest@v4
         with:
           subject-path: 'dist/*'
           predicate-type: 'https://cyclonedx.org/bom'
