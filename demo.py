@@ -324,7 +324,7 @@ else
   printf '\\n  \\033[1;31mDIFFERENCES FOUND:\\033[0m\\n'
   cat "$R/diff.txt"
 fi
-sleep 6
+sleep 12
 tmux kill-session -t shimmer 2>/dev/null
 """
 
@@ -344,7 +344,7 @@ RIGHT=$(tmux split-window -h -P -F '#{{pane_id}}' -t "$LEFT")
 tmux select-pane -t "$LEFT"   -T 'ops.pebble.Client   (unix socket)'
 tmux select-pane -t "$RIGHT"  -T 'shimmer.PebbleCliClient   (CLI)'
 tmux select-pane -t "$BOTTOM" -T 'parity check'
-RUN="cd {cwd} && PEBBLE={pebble} DEMO_PACE=0.6"
+RUN="cd {cwd} && PEBBLE={pebble} DEMO_PACE=1.2"
 tmux send-keys -t "$LEFT"   "$RUN uv run python demo.py --client socket --results $R/socket.txt; touch $R/.done-socket" C-m
 tmux send-keys -t "$RIGHT"  "$RUN uv run python demo.py --client cli    --results $R/cli.txt;    touch $R/.done-cli" C-m
 tmux send-keys -t "$BOTTOM" "bash {controller}" C-m

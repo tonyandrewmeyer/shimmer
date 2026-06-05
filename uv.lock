@@ -193,7 +193,7 @@ wheels = [
 
 [[package]]
 name = "pebble-shimmer"
-version = "1.0.0b2"
+version = "1.0.0"
 source = { editable = "." }
 dependencies = [
     { name = "ops" },

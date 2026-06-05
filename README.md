@@ -90,15 +90,17 @@ CLI invocation is the source of every limitation here — each call spawns a
 `pebble` process, so there's more per-call overhead than the socket transport,
 and some streaming is buffered rather than incremental.
 
-A few methods can't fully match the socket client yet:
+A few methods can't fully match the socket client:
 
 - `replan_services()`, `start_services()`, `stop_services()`, and
   `restart_services()` return the change ID only when no timeout is set.
-- `notify()` supports custom notices only.
-- `autostart_services()` is currently an alias for `replan()`.
-- `ack_warnings()` is not yet implemented.
-- `get_warnings()` is implemented for the "no warnings" case only; parsing a
-  non-empty list raises `NotImplementedError`.
+- `notify()` supports custom notices only (Pebble's CLI only exposes
+  `pebble notify` for custom notices).
+- `abort_change()` raises `NotImplementedError`: the Pebble CLI exposes no
+  command to abort a change, so there is no way to back this through the CLI.
+- `get_warnings()` and `ack_warnings()` raise `NotImplementedError`: warnings
+  are deprecated in Pebble (the warnings API has been removed and warnings are
+  now surfaced as notices). Use `get_notices()` / `get_notice()` instead.
 
 `get_services()`, `get_checks()`, `list_files()`, `get_changes()`,
 `get_change()`, and `get_identities()` use Pebble's structured `--format json`

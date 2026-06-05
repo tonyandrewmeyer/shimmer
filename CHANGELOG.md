@@ -1,3 +1,17 @@
+# 2026-06-05
+
+Shimmer 1.0.0. The `PebbleCliClient` API is now stable: it matches
+`ops.pebble.Client` method-for-method, return-type-for-return-type, and
+exception-for-exception, as exercised by `tests/integration/test_parity.py`.
+
+Features:
+
+- The `Development Status` classifier is now `5 - Production/Stable`.
+
+Bug fixes and packaging:
+
+- The source distribution now includes `CHANGELOG.md`.
+
 # 2026-05-31
 
 Features:
