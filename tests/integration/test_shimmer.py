@@ -64,9 +64,9 @@ def running_pebble(
             stderr=subprocess.DEVNULL,
         )
 
-        # Probe with a command that actually contacts the daemon (get_services
-        # hits the socket); get_system_info only runs `version --client`, which
-        # succeeds before the daemon is listening.
+        # Probe with a command that actually contacts the daemon. (get_services
+        # and get_system_info both do, since v1.32.0's `version --format json`
+        # reads the server version.)
         for attempt in range(60):
             try:
                 pebble_client.get_services()

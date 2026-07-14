@@ -1,3 +1,25 @@
+# 2026-07-14
+
+Features:
+
+- `get_system_info()` now uses `pebble version --format json` and returns
+  the daemon's (server) version, matching `ops.pebble.Client` (which reads
+  the same value from `/v1/system-info`). Previously shimmer returned the
+  CLI binary's own version via `pebble version --client`. This requires
+  Pebble v1.32.0 or later.
+- `get_warnings()` is now implemented on top of `pebble warnings --format
+  json` (added in Pebble v1.31.0): warnings are surfaced by Pebble as
+  notices of type `warning`, and shimmer maps them back to
+  `ops.pebble.Warning` for drop-in parity. `ack_warnings()` continues to
+  raise `NotImplementedError` because `pebble okay` acks by local CLI
+  state rather than by timestamp.
+
+Bug fixes and packaging:
+
+- The minimum supported Pebble version is now v1.32.0, in line with the
+  structured-output requirement `get_system_info()` now shares with the
+  other read methods.
+
 # 2026-06-05
 
 Shimmer 1.0.0. The `PebbleCliClient` API is now stable: it matches

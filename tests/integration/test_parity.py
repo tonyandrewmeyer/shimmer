@@ -326,10 +326,12 @@ class TestNoticeParity:
         assert_parity(s, c, drop={"id"})
 
 
-# Warnings have no parity tests: they are deprecated in Pebble (the API
-# endpoint is removed) and shimmer intentionally raises NotImplementedError for
-# get_warnings()/ack_warnings(). That documented behaviour is covered by a
-# unit test (tests/unit/test_client.py::...::test_warnings_unsupported).
+# get_warnings() has no parity test: ops.pebble.Client hits /v1/warnings which
+# modern Pebble no longer serves (warnings are surfaced as notices), so the
+# socket client raises APIError(404) while shimmer returns a translated list.
+# The CLI-side behaviour is covered by unit tests. ack_warnings() likewise has
+# no parity: `pebble okay` cannot honour ops's timestamp semantics, so shimmer
+# raises NotImplementedError (covered by test_ack_warnings_unsupported).
 
 
 class TestIdentityParity:
