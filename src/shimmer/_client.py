@@ -176,9 +176,12 @@ class PebbleCliClient:
 
     def get_system_info(self) -> SystemInfo:
         """Get system information."""
-        result = self._run_command(["version", "--client"])
-        lines = result.stdout.strip().split("\n")
-        return SystemInfo(lines[0].strip())
+        # Requires Pebble >= v1.32.0, which added ``--format json`` to
+        # ``pebble version``. Emits ``{"client": ..., "server": ...}``; the
+        # ``server`` field is the daemon version, matching what ops.pebble
+        # returns from ``/v1/system-info``.
+        data = self._run_json(["version"])
+        return SystemInfo(version=data["server"])
 
     def add_layer(
         self,
@@ -897,31 +900,53 @@ class PebbleCliClient:
         # The output looks like: "Recorded notice 38"
         return result.stdout.strip().split()[-1]
 
-    # Warnings are deprecated in Pebble: the warnings API endpoint has been
-    # removed (warnings are now surfaced as notices), and the `pebble okay` CLI
-    # has stateful, timestamp-free semantics that cannot reproduce
-    # ops.pebble.Client's by-timestamp acknowledgement. Rather than return a
-    # silently-empty list or a misleading count, shimmer reports clearly that
-    # warnings are unsupported. Use the notices methods instead.
-    _WARNINGS_UNSUPPORTED = (
-        "Pebble has deprecated warnings (the warnings API has been removed and "
-        "warnings are now surfaced as notices), so shimmer does not support "
-        "{method}. Use get_notices()/get_notice() instead."
-    )
-
     def get_warnings(
         self,
         select: WarningState = WarningState.PENDING,
     ) -> list[Warning]:
-        """Unsupported: warnings are deprecated in Pebble (see get_notices)."""
-        raise NotImplementedError(
-            self._WARNINGS_UNSUPPORTED.format(method="get_warnings()")
-        )
+        """Get list of warnings in given state (pending or all).
+
+        Under the hood, Pebble surfaces warnings as notices of type ``warning``.
+        ``pebble warnings --format json`` (added in Pebble v1.31.0) emits the
+        matching notices, which we map back to ``ops.pebble.Warning`` for
+        drop-in compatibility with ``ops.pebble.Client``.
+        """
+        cmd = ["warnings"]
+        if select == WarningState.ALL:
+            cmd.append("--all")
+        data = self._run_json(cmd)
+        if not data:
+            return []
+        warnings: list[Warning] = []
+        for notice in data.get("warnings", []):
+            # The notice's ``key`` is the warning body; the ``occurred`` fields
+            # map to the ops ``added`` fields. ``last-shown`` is a per-client
+            # concept that Pebble tracks in local CLI state rather than on the
+            # notice, so it's left unset.
+            warnings.append(
+                Warning.from_dict(
+                    {
+                        "message": notice["key"],
+                        "first-added": notice["first-occurred"],
+                        "last-added": notice["last-occurred"],
+                        "expire-after": notice.get("expire-after", ""),
+                        "repeat-after": notice.get("repeat-after", ""),
+                    }
+                )
+            )
+        return warnings
 
     def ack_warnings(self, timestamp: datetime.datetime) -> int:
-        """Unsupported: warnings are deprecated in Pebble (see get_notices)."""
+        """Unsupported: ``pebble okay`` acks stateful, not by timestamp."""
+        # The socket client POSTs {"action": "okay", "timestamp": ...} to
+        # /v1/warnings; the CLI's ``pebble okay`` acks whatever the local CLI
+        # state file marks as "last listed" and takes no timestamp argument, so
+        # we can't reproduce the by-timestamp semantics ops.pebble.Client
+        # promises. Rather than silently ack the wrong set, we surface this.
         raise NotImplementedError(
-            self._WARNINGS_UNSUPPORTED.format(method="ack_warnings()")
+            "ack_warnings() cannot be implemented via the pebble CLI: "
+            "`pebble okay` acks by local CLI state, not by timestamp. "
+            "Use the socket client if you need timestamp-based acking."
         )
 
     def get_identities(self) -> dict[str, Identity]:

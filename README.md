@@ -98,15 +98,20 @@ A few methods can't fully match the socket client:
   `pebble notify` for custom notices).
 - `abort_change()` raises `NotImplementedError`: the Pebble CLI exposes no
   command to abort a change, so there is no way to back this through the CLI.
-- `get_warnings()` and `ack_warnings()` raise `NotImplementedError`: warnings
-  are deprecated in Pebble (the warnings API has been removed and warnings are
-  now surfaced as notices). Use `get_notices()` / `get_notice()` instead.
+- `get_warnings()` works by reading `pebble warnings --format json` (Pebble
+  surfaces warnings as notices of type `warning`) and mapping the result back
+  to `ops.pebble.Warning`, so it stays drop-in with `ops.pebble.Client`.
+  `ack_warnings()` still raises `NotImplementedError`: `pebble okay` acks by
+  local CLI state, not by timestamp, so ops's timestamp semantics cannot be
+  reproduced.
 
-`get_services()`, `get_checks()`, `list_files()`, `get_changes()`,
-`get_change()`, and `get_identities()` use Pebble's structured `--format json`
-output, so they return the same rich data as `ops.pebble.Client` (change
-`kind`/`tasks`/`err`, check thresholds, real file ownership, local identity user
-IDs). This requires a Pebble build that supports `--format` on read commands.
+`get_system_info()`, `get_services()`, `get_checks()`, `list_files()`,
+`get_changes()`, `get_change()`, `get_notices()`, `get_notice()`,
+`get_warnings()`, and `get_identities()` use Pebble's structured `--format
+json` output, so they return the same rich data as `ops.pebble.Client` (change
+`kind`/`tasks`/`err`, check thresholds, real file ownership, local identity
+user IDs). This requires Pebble v1.32.0 or later (which added `--format` to
+`pebble version`).
 
 ## Comparison with `ops.pebble.Client`
 

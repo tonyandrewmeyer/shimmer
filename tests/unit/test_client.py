@@ -183,13 +183,16 @@ class TestPebbleCliClient:
 
     def test_get_system_info(self, mock_subprocess: Mock, client: PebbleCliClient):
         """Test getting system information."""
-        mock_subprocess.run.return_value.stdout = "v1.0.0\n"
+        mock_subprocess.run.return_value.stdout = json.dumps(
+            {"client": "v1.32.0", "server": "v1.32.0"}
+        )
 
         info = client.get_system_info()
 
-        assert info.version == "v1.0.0"
+        # Mirror ops.pebble.Client, which returns the daemon (server) version.
+        assert info.version == "v1.32.0"
         mock_subprocess.run.assert_called_once_with(
-            ["mock-pebble", "version", "--client"],
+            ["mock-pebble", "version", "--format", "json"],
             input=None,
             capture_output=True,
             text=True,
@@ -198,15 +201,17 @@ class TestPebbleCliClient:
             check=True,
         )
 
-    def test_get_system_info_multiline_output(
+    def test_get_system_info_server_differs_from_client(
         self, mock_subprocess: Mock, client: PebbleCliClient
     ):
-        """Only the first line of `version --client` output is used."""
-        mock_subprocess.run.return_value.stdout = "v1.2.3\nextra trailing line\n"
+        """When client and server versions differ, the server version wins."""
+        mock_subprocess.run.return_value.stdout = json.dumps(
+            {"client": "v1.32.0", "server": "v1.30.1"}
+        )
 
         info = client.get_system_info()
 
-        assert info.version == "v1.2.3"
+        assert info.version == "v1.30.1"
 
     def test_add_layer_string(self, mock_subprocess: Mock, client: PebbleCliClient):
         """Test adding a layer from string."""
@@ -1143,11 +1148,59 @@ class TestPebbleCliClient:
         with pytest.raises(ValueError, match="Only custom notices are supported"):
             client.notify(ops.pebble.NoticeType.CHANGE_UPDATE, "some-key")
 
-    def test_warnings_unsupported(self, client: PebbleCliClient):
-        """Warnings are deprecated in Pebble; both methods raise clearly."""
-        with pytest.raises(NotImplementedError, match="deprecated"):
-            client.get_warnings()
-        with pytest.raises(NotImplementedError, match="deprecated"):
+    def test_get_warnings(self, mock_subprocess: Mock, client: PebbleCliClient):
+        """get_warnings maps `pebble warnings --format json` output to Warning."""
+        mock_subprocess.run.return_value.stdout = json.dumps(
+            {
+                "warnings": [
+                    {
+                        "id": "1",
+                        "user-id": None,
+                        "type": "warning",
+                        "key": "something is off",
+                        "first-occurred": "2026-07-14T12:00:00Z",
+                        "last-occurred": "2026-07-14T12:05:00Z",
+                        "last-repeated": "2026-07-14T12:05:00Z",
+                        "occurrences": 2,
+                        "expire-after": "672h0m0s",
+                        "repeat-after": "24h0m0s",
+                    }
+                ]
+            }
+        )
+
+        warnings = client.get_warnings()
+
+        assert len(warnings) == 1
+        w = warnings[0]
+        assert w.message == "something is off"
+        assert w.first_added == datetime.datetime(
+            2026, 7, 14, 12, 0, 0, tzinfo=datetime.UTC
+        )
+        assert w.last_added == datetime.datetime(
+            2026, 7, 14, 12, 5, 0, tzinfo=datetime.UTC
+        )
+        assert w.last_shown is None
+        assert w.expire_after == "672h0m0s"
+        assert w.repeat_after == "24h0m0s"
+        call_args = mock_subprocess.run.call_args[0][0]
+        assert call_args == ["mock-pebble", "warnings", "--format", "json"]
+
+    def test_get_warnings_all(self, mock_subprocess: Mock, client: PebbleCliClient):
+        """WarningState.ALL passes --all through to the CLI."""
+        mock_subprocess.run.return_value.stdout = json.dumps({"warnings": []})
+        client.get_warnings(select=ops.pebble.WarningState.ALL)
+        call_args = mock_subprocess.run.call_args[0][0]
+        assert call_args == ["mock-pebble", "warnings", "--all", "--format", "json"]
+
+    def test_get_warnings_empty(self, mock_subprocess: Mock, client: PebbleCliClient):
+        """No warnings surfaces as an empty list, not an error."""
+        mock_subprocess.run.return_value.stdout = json.dumps({"warnings": []})
+        assert client.get_warnings() == []
+
+    def test_ack_warnings_unsupported(self, client: PebbleCliClient):
+        """`pebble okay` has no timestamp arg, so we can't preserve semantics."""
+        with pytest.raises(NotImplementedError, match="timestamp"):
             client.ack_warnings(datetime.datetime.now(datetime.UTC))
 
     def test_abort_change_unsupported(self, client: PebbleCliClient):
@@ -1265,7 +1318,7 @@ class TestRunnerInjection:
                 captured["argv"] = argv
                 captured["env"] = env
                 result = MagicMock()
-                result.stdout = "v1.2.3\n"
+                result.stdout = json.dumps({"client": "v1.2.3", "server": "v1.2.3"})
                 result.stderr = ""
                 result.returncode = 0
                 return result
@@ -1279,7 +1332,7 @@ class TestRunnerInjection:
         info = client.get_system_info()
 
         assert info.version == "v1.2.3"
-        assert captured["argv"] == ["my-pebble", "version", "--client"]
+        assert captured["argv"] == ["my-pebble", "version", "--format", "json"]
         assert captured["env"] is client._env
 
         # Structural check: FakeRunner satisfies the Runner protocol.
