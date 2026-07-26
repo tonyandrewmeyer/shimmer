@@ -103,6 +103,7 @@ precision = 2
 directory = "htmlcov"
 
 [tool.ruff]
+src = ["src", "tests"]
 line-length = 99
 target-version = "py311"
 
@@ -118,6 +119,7 @@ select = [
     "YTT",
     "S",
     "B",
+    "C4",
     "SIM",
     "RUF",
     "PERF",
@@ -154,3 +156,8 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "demo.py" = ["S108", "S103", "D103"]  # A throwaway demo script, not shipped code.
 "**/tests/**" = ["S101", "S105", "S106", "S108", "PLR2004", "ARG", "SLF001", "N802", "N803", "N806", "D"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["shimmer"]
+
+# Pytest configuration
