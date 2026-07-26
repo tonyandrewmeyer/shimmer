@@ -63,9 +63,7 @@ class TestPebbleCliClient:
         mock_subprocess.run.assert_called_once()
         assert result.stdout == "success"
 
-    def test_run_command_with_input(
-        self, mock_subprocess: Mock, client: PebbleCliClient
-    ):
+    def test_run_command_with_input(self, mock_subprocess: Mock, client: PebbleCliClient):
         """Test command execution with input data."""
         mock_subprocess.run.return_value.stdout = "success"
 
@@ -81,9 +79,7 @@ class TestPebbleCliClient:
         with pytest.raises(ops.pebble.TimeoutError):
             client._run_command(["test"])
 
-    def test_run_command_api_error(
-        self, mock_subprocess: Mock, client: PebbleCliClient
-    ):
+    def test_run_command_api_error(self, mock_subprocess: Mock, client: PebbleCliClient):
         """An unclassifiable CLI error maps to a 500 with the stripped message."""
         mock_subprocess.run.side_effect = subprocess.CalledProcessError(
             1, "cmd", stderr="error: something went wrong"
@@ -144,9 +140,7 @@ class TestPebbleCliClient:
         message: str,
     ):
         """CLI stderr is classified into the HTTP status the socket client uses."""
-        mock_subprocess.run.side_effect = subprocess.CalledProcessError(
-            1, "cmd", stderr=stderr
-        )
+        mock_subprocess.run.side_effect = subprocess.CalledProcessError(1, "cmd", stderr=stderr)
 
         with pytest.raises(ops.pebble.APIError) as exc_info:
             client._run_command(["test"])
@@ -162,9 +156,7 @@ class TestPebbleCliClient:
         self, mock_subprocess: Mock, client: PebbleCliClient
     ):
         """An error with no stderr still produces a usable message."""
-        mock_subprocess.run.side_effect = subprocess.CalledProcessError(
-            3, "cmd", stderr=""
-        )
+        mock_subprocess.run.side_effect = subprocess.CalledProcessError(3, "cmd", stderr="")
 
         with pytest.raises(ops.pebble.APIError) as exc_info:
             client._run_command(["test"])
@@ -172,9 +164,7 @@ class TestPebbleCliClient:
         assert "code 3" in exc_info.value.message
         assert exc_info.value.code == 500
 
-    def test_run_command_file_not_found(
-        self, mock_subprocess: Mock, client: PebbleCliClient
-    ):
+    def test_run_command_file_not_found(self, mock_subprocess: Mock, client: PebbleCliClient):
         """Test handling of missing pebble binary."""
         mock_subprocess.run.side_effect = FileNotFoundError()
 
@@ -223,9 +213,7 @@ class TestPebbleCliClient:
         assert call_args[:3] == ["mock-pebble", "add", "test-layer"]
         assert call_args[3].endswith(".yaml")
 
-    def test_add_layer_with_combine(
-        self, mock_subprocess: Mock, client: PebbleCliClient
-    ):
+    def test_add_layer_with_combine(self, mock_subprocess: Mock, client: PebbleCliClient):
         """Test adding a layer with combine option."""
         layer_yaml = "services:\n  test:\n    command: echo test"
 
@@ -266,9 +254,7 @@ class TestPebbleCliClient:
             "--no-wait",
         ]
 
-    def test_replan_services_no_wait(
-        self, mock_subprocess: Mock, client: PebbleCliClient
-    ):
+    def test_replan_services_no_wait(self, mock_subprocess: Mock, client: PebbleCliClient):
         """Test replanning services with no wait."""
         mock_subprocess.run.return_value.stdout = "Change 42 submitted"
 
@@ -309,9 +295,7 @@ class TestPebbleCliClient:
         call_args = mock_subprocess.run.call_args[0][0]
         assert call_args == ["mock-pebble", "services", "--format", "json"]
 
-    def test_get_services_filtered(
-        self, mock_subprocess: Mock, client: PebbleCliClient
-    ):
+    def test_get_services_filtered(self, mock_subprocess: Mock, client: PebbleCliClient):
         """Test getting specific services by name."""
         # Pebble does the name filtering itself, so it only returns the match.
         mock_subprocess.run.return_value.stdout = json.dumps(
@@ -400,27 +384,21 @@ class TestPebbleCliClient:
         call_args = mock_subprocess.run.call_args[0][0]
         assert call_args == ["mock-pebble", "signal", "HUP", "service1"]
 
-    def test_send_signal_bare_name(
-        self, mock_subprocess: Mock, client: PebbleCliClient
-    ):
+    def test_send_signal_bare_name(self, mock_subprocess: Mock, client: PebbleCliClient):
         """Test sending signal by bare name without the 'SIG' prefix."""
         client.send_signal("HUP", ["service1"])
 
         call_args = mock_subprocess.run.call_args[0][0]
         assert call_args == ["mock-pebble", "signal", "HUP", "service1"]
 
-    def test_send_signal_lowercase_name(
-        self, mock_subprocess: Mock, client: PebbleCliClient
-    ):
+    def test_send_signal_lowercase_name(self, mock_subprocess: Mock, client: PebbleCliClient):
         """Test sending signal by lowercase name."""
         client.send_signal("sighup", ["service1"])
 
         call_args = mock_subprocess.run.call_args[0][0]
         assert call_args == ["mock-pebble", "signal", "HUP", "service1"]
 
-    def test_send_signal_invalid_name(
-        self, mock_subprocess: Mock, client: PebbleCliClient
-    ):
+    def test_send_signal_invalid_name(self, mock_subprocess: Mock, client: PebbleCliClient):
         """Test that an invalid signal name raises ValueError."""
         with pytest.raises(ValueError, match="Invalid signal name"):
             client.send_signal("NOTASIGNAL", ["service1"])
@@ -473,9 +451,7 @@ class TestPebbleCliClient:
         assert by_name["check2"].failures == 3
         assert by_name["check2"].status == ops.pebble.CheckStatus.DOWN
 
-    def test_get_checks_with_level(
-        self, mock_subprocess: Mock, client: PebbleCliClient
-    ):
+    def test_get_checks_with_level(self, mock_subprocess: Mock, client: PebbleCliClient):
         """Test getting checks filtered by level."""
         mock_subprocess.run.return_value.stdout = json.dumps({"checks": {}})
 
@@ -588,9 +564,7 @@ class TestPebbleCliClient:
         call_args = mock_subprocess.run.call_args[0][0]
         assert call_args == ["mock-pebble", "ls", "/path", "--format", "json"]
 
-    def test_list_files_with_pattern(
-        self, mock_subprocess: Mock, client: PebbleCliClient
-    ):
+    def test_list_files_with_pattern(self, mock_subprocess: Mock, client: PebbleCliClient):
         """Test listing files with pattern."""
         mock_subprocess.run.return_value.stdout = json.dumps(
             {
@@ -911,9 +885,7 @@ class TestPebbleCliClient:
         in_progress = client.get_changes(select=ops.pebble.ChangeState.IN_PROGRESS)
         assert [c.id for c in in_progress] == ["2"]
 
-    def test_get_changes_for_service(
-        self, mock_subprocess: Mock, client: PebbleCliClient
-    ):
+    def test_get_changes_for_service(self, mock_subprocess: Mock, client: PebbleCliClient):
         """Test that a service filter is passed through as a positional arg."""
         mock_subprocess.run.return_value.stdout = json.dumps({"changes": []})
         client.get_changes(service="demo-server")
@@ -993,18 +965,14 @@ class TestPebbleCliClient:
         with pytest.raises(ops.pebble.TimeoutError, match="timed out"):
             client.wait_change(ops.pebble.ChangeID("2"), timeout=0)
 
-    def test_wait_change_polls_until_ready(
-        self, mock_subprocess: Mock, client: PebbleCliClient
-    ):
+    def test_wait_change_polls_until_ready(self, mock_subprocess: Mock, client: PebbleCliClient):
         """wait_change keeps polling until the change reports ready."""
         not_ready = Mock(returncode=0, stderr="", stdout=self._change_json(ready=False))
         is_ready = Mock(returncode=0, stderr="", stdout=self._change_json(ready=True))
         mock_subprocess.run.side_effect = [not_ready, not_ready, is_ready]
 
         with patch("shimmer._client.time.sleep") as mock_sleep:
-            change = client.wait_change(
-                ops.pebble.ChangeID("2"), timeout=10.0, delay=0.01
-            )
+            change = client.wait_change(ops.pebble.ChangeID("2"), timeout=10.0, delay=0.01)
 
         assert change.ready
         assert mock_subprocess.run.call_count == 3
@@ -1048,9 +1016,7 @@ class TestPebbleCliClient:
                         key="87",
                         occurrences=3,
                     ),
-                    self._notice_dict(
-                        "42", key="demo.example.com/test", occurrences=10
-                    ),
+                    self._notice_dict("42", key="demo.example.com/test", occurrences=10),
                 ]
             }
         )
@@ -1078,9 +1044,7 @@ class TestPebbleCliClient:
         """Type and key filters are passed as --type/--key flags, not positionally."""
         mock_subprocess.run.return_value.stdout = '{"notices":[]}'
 
-        client.get_notices(
-            types=[ops.pebble.NoticeType.CUSTOM], keys=["example.com/foo"]
-        )
+        client.get_notices(types=[ops.pebble.NoticeType.CUSTOM], keys=["example.com/foo"])
 
         call_args = mock_subprocess.run.call_args[0][0]
         assert call_args[call_args.index("--type") + 1] == "custom"
@@ -1174,12 +1138,8 @@ class TestPebbleCliClient:
         assert len(warnings) == 1
         w = warnings[0]
         assert w.message == "something is off"
-        assert w.first_added == datetime.datetime(
-            2026, 7, 14, 12, 0, 0, tzinfo=datetime.UTC
-        )
-        assert w.last_added == datetime.datetime(
-            2026, 7, 14, 12, 5, 0, tzinfo=datetime.UTC
-        )
+        assert w.first_added == datetime.datetime(2026, 7, 14, 12, 0, 0, tzinfo=datetime.UTC)
+        assert w.last_added == datetime.datetime(2026, 7, 14, 12, 5, 0, tzinfo=datetime.UTC)
         assert w.last_shown is None
         assert w.expire_after == "672h0m0s"
         assert w.repeat_after == "24h0m0s"
@@ -1265,9 +1225,7 @@ class TestPebbleCliClient:
         """replace_identities writes the identities as YAML and uses --replace."""
         captured = self._capture_from_file(mock_subprocess)
 
-        client.replace_identities(
-            {"alice": {"access": "admin", "local": {"user-id": 1000}}}
-        )
+        client.replace_identities({"alice": {"access": "admin", "local": {"user-id": 1000}}})
 
         cmd = mock_subprocess.run.call_args[0][0]
         assert cmd[:3] == ["mock-pebble", "update-identities", "--from"]
@@ -1282,9 +1240,7 @@ class TestPebbleCliClient:
         """An Identity object is serialised via to_dict()."""
         captured = self._capture_from_file(mock_subprocess)
 
-        identity = ops.pebble.Identity.from_dict(
-            {"access": "read", "local": {"user-id": 42}}
-        )
+        identity = ops.pebble.Identity.from_dict({"access": "read", "local": {"user-id": 42}})
         client.replace_identities({"bob": identity})
 
         assert captured["data"]["identities"]["bob"]["access"] == "read"
@@ -1323,9 +1279,7 @@ class TestRunnerInjection:
                 result.returncode = 0
                 return result
 
-            def popen(
-                self, argv, *, stdin, stdout, stderr, text, env=None
-            ):  # pragma: no cover
+            def popen(self, argv, *, stdin, stdout, stderr, text, env=None):  # pragma: no cover
                 raise NotImplementedError
 
         client = PebbleCliClient(pebble_binary="my-pebble", runner=FakeRunner())
@@ -1437,8 +1391,7 @@ class TestCompatibilityWithOpsPebble:
         protocol_methods = {
             name
             for name in dir(PebbleClientProtocol)
-            if not name.startswith("_")
-            and callable(getattr(PebbleClientProtocol, name, None))
+            if not name.startswith("_") and callable(getattr(PebbleClientProtocol, name, None))
         }
         assert protocol_methods, "no protocol methods discovered"
         missing = [m for m in sorted(protocol_methods) if not hasattr(client, m)]
@@ -1472,9 +1425,7 @@ class TestCompatibilityWithOpsPebble:
             assert param in exec_params, f"Missing parameter in exec(): {param}"
 
     @patch("shimmer._process.subprocess.run")
-    def test_error_handling_compatibility(
-        self, mock_run: Mock, client: PebbleCliClient
-    ):
+    def test_error_handling_compatibility(self, mock_run: Mock, client: PebbleCliClient):
         """Test that errors are raised in a compatible way."""
         mock_run.side_effect = subprocess.CalledProcessError(
             1, "cmd", stderr='error: cannot find change with id "1"'

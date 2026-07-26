@@ -16,7 +16,7 @@ import pathlib
 import subprocess
 import tempfile
 import time
-from collections.abc import Generator
+from typing import TYPE_CHECKING
 
 import ops
 import pytest
@@ -24,6 +24,9 @@ import pytest
 from shimmer import PebbleCliClient
 
 from .conftest import BASE_LAYER
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
 
 pytestmark = pytest.mark.integration
 

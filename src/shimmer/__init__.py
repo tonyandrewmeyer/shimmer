@@ -20,7 +20,10 @@ from ._process import ExecProcess
 from ._protocol import PebbleClientProtocol
 from ._runner import FileTransferRunner, LocalSubprocessRunner, Runner
 
-__all__ = [
+# Grouped by origin rather than sorted: shimmer's own API first, then the
+# ops.pebble exceptions re-exported for drop-in compatibility (with the base
+# ``Error`` leading its group).
+__all__ = [  # noqa: RUF022
     "PebbleCliClient",
     "ExecProcess",
     "FileTransferRunner",

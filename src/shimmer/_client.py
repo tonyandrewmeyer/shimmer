@@ -1,4 +1,4 @@
-"""Shimmer - shiny Pebble client
+"""Shimmer - shiny Pebble client.
 
 This module provides a PebbleCliClient class that implements the same interface as
 ops.pebble.Client but communicates with Pebble via CLI commands instead of via a
@@ -7,7 +7,6 @@ socket.
 
 from __future__ import annotations
 
-import datetime
 import fnmatch
 import io
 import json
@@ -17,8 +16,7 @@ import signal
 import subprocess
 import tempfile
 import time
-from collections.abc import Iterable, Mapping
-from typing import Any, BinaryIO, NoReturn, TextIO, cast, overload
+from typing import TYPE_CHECKING, Any, BinaryIO, NoReturn, TextIO, cast, overload
 
 import yaml
 
@@ -51,6 +49,10 @@ from ops.pebble import (
 
 from ._process import ExecProcess
 from ._runner import FileTransferRunner, LocalSubprocessRunner, Runner
+
+if TYPE_CHECKING:
+    import datetime
+    from collections.abc import Iterable, Mapping
 
 
 class PebbleCliClient:
@@ -91,7 +93,7 @@ class PebbleCliClient:
         check: bool = True,
     ) -> subprocess.CompletedProcess[Any]:
         """Run a pebble CLI command and return the result."""
-        full_cmd = [self.pebble_binary] + cmd
+        full_cmd = [self.pebble_binary, *cmd]
 
         try:
             result = self._runner.run(
@@ -107,9 +109,7 @@ class PebbleCliClient:
         except subprocess.TimeoutExpired as e:
             raise TimeoutError(f"Command {full_cmd} timed out") from e
         except FileNotFoundError as e:
-            raise ConnectionError(
-                f"Pebble binary not found: {self.pebble_binary}"
-            ) from e
+            raise ConnectionError(f"Pebble binary not found: {self.pebble_binary}") from e
 
     # Substrings used to recover the HTTP status the *socket* client would have
     # surfaced. The CLI only prints ``error: <message>`` and exits non-zero, so
@@ -192,7 +192,7 @@ class PebbleCliClient:
     ):
         """Add a configuration layer."""
         if hasattr(layer, "to_yaml"):
-            assert isinstance(layer, Layer)  # Unpythonic, but makes the linters happy.
+            assert isinstance(layer, Layer)  # noqa: S101  # Type narrowing for the checker.
             layer_yaml = layer.to_yaml()
         elif isinstance(layer, dict):
             layer_yaml = yaml.dump(layer)
@@ -344,7 +344,7 @@ class PebbleCliClient:
                 raise ValueError(f"Invalid signal name: {sig}")
             sig_name = full_name
         # Pebble's CLI expects the bare, uppercase signal name (e.g. "HUP").
-        cmd = ["signal", sig_name[3:]] + service_list
+        cmd = ["signal", sig_name[3:], *service_list]
         self._run_command(cmd)
 
     def get_checks(
@@ -419,11 +419,7 @@ class PebbleCliClient:
             kind = "not-found"
         elif "permission denied" in text:
             kind = "permission-denied"
-        elif (
-            "not a directory" in text
-            or "is a directory" in text
-            or "already exists" in text
-        ):
+        elif "not a directory" in text or "is a directory" in text or "already exists" in text:
             kind = "generic"
         else:
             raise error
@@ -508,11 +504,9 @@ class PebbleCliClient:
         encoding: str | None = "utf-8",
     ) -> TextIO | BinaryIO:
         """Read a file from the remote system."""
-        if hasattr(self._runner, "upload_temp") and hasattr(
-            self._runner, "download_temp"
-        ):
+        if hasattr(self._runner, "upload_temp") and hasattr(self._runner, "download_temp"):
             return self._pull_via_runner(
-                cast(FileTransferRunner, self._runner), path, encoding=encoding
+                cast("FileTransferRunner", self._runner), path, encoding=encoding
             )
         return self._pull_local(path, encoding=encoding)
 
@@ -564,10 +558,11 @@ class PebbleCliClient:
             tmp_path.unlink(missing_ok=True)
             raise
 
+        # The caller owns this handle, so it cannot be opened in a `with` block.
         handle: TextIO | BinaryIO = (
-            open(tmp_name, "rb")
+            open(tmp_name, "rb")  # noqa: SIM115
             if encoding is None
-            else open(tmp_name, encoding=encoding, newline="")
+            else open(tmp_name, encoding=encoding, newline="")  # noqa: SIM115
         )
         tmp_path.unlink(missing_ok=True)
         return handle
@@ -586,10 +581,7 @@ class PebbleCliClient:
         group: str | None = None,
     ) -> None:
         """Write content to a file on the remote system."""
-        if isinstance(source, str | bytes):
-            content = source
-        else:
-            content = source.read()
+        content = source if isinstance(source, str | bytes) else source.read()
         if isinstance(content, str):
             content = content.encode(encoding)
 
@@ -608,7 +600,7 @@ class PebbleCliClient:
             cmd.extend(["--gid", str(group_id)])
 
         if hasattr(self._runner, "upload_temp"):
-            runner = cast(FileTransferRunner, self._runner)
+            runner = cast("FileTransferRunner", self._runner)
             tmp_path = runner.upload_temp(content)
             try:
                 cmd.insert(1, tmp_path)
@@ -720,28 +712,21 @@ class PebbleCliClient:
         # Prepare stdin content
         stdin_content = None
         if stdin is not None:
-            if isinstance(stdin, str | bytes):
-                stdin_content = stdin
-            else:
-                stdin_content = stdin.read()
+            stdin_content = stdin if isinstance(stdin, str | bytes) else stdin.read()
 
             if isinstance(stdin_content, str) and encoding is None:
                 stdin_content = stdin_content.encode()
             elif isinstance(stdin_content, bytes) and encoding:
                 stdin_content = stdin_content.decode(encoding)
-            assert isinstance(stdin_content, (str | bytes))
+            assert isinstance(stdin_content, (str | bytes))  # noqa: S101  # Type narrowing.
 
         # Start the process
-        full_cmd = [self.pebble_binary] + cmd
+        full_cmd = [self.pebble_binary, *cmd]
 
         # Determine stdio handling
-        process_stdin = (
-            subprocess.PIPE if stdin_content is not None or stdin is None else None
-        )
+        process_stdin = subprocess.PIPE if stdin_content is not None or stdin is None else None
         process_stdout = subprocess.PIPE if stdout is None else stdout
-        process_stderr = (
-            subprocess.PIPE if stderr is None and not combine_stderr else stderr
-        )
+        process_stderr = subprocess.PIPE if stderr is None and not combine_stderr else stderr
 
         if combine_stderr and stderr is None:
             process_stderr = subprocess.STDOUT
@@ -756,9 +741,7 @@ class PebbleCliClient:
                 env=self._env,
             )
         except FileNotFoundError as e:
-            raise ConnectionError(
-                f"Pebble binary not found: {self.pebble_binary}"
-            ) from e
+            raise ConnectionError(f"Pebble binary not found: {self.pebble_binary}") from e
 
         return ExecProcess(
             command=command,
@@ -840,9 +823,7 @@ class PebbleCliClient:
             if change.ready:
                 return change
             if deadline is not None and time.monotonic() >= deadline:
-                raise TimeoutError(
-                    f"timed out waiting for change {change_id} ({timeout} seconds)"
-                )
+                raise TimeoutError(f"timed out waiting for change {change_id} ({timeout} seconds)")
             time.sleep(delay)
 
     def get_notices(
@@ -917,24 +898,22 @@ class PebbleCliClient:
         data = self._run_json(cmd)
         if not data:
             return []
-        warnings: list[Warning] = []
-        for notice in data.get("warnings", []):
-            # The notice's ``key`` is the warning body; the ``occurred`` fields
-            # map to the ops ``added`` fields. ``last-shown`` is a per-client
-            # concept that Pebble tracks in local CLI state rather than on the
-            # notice, so it's left unset.
-            warnings.append(
-                Warning.from_dict(
-                    {
-                        "message": notice["key"],
-                        "first-added": notice["first-occurred"],
-                        "last-added": notice["last-occurred"],
-                        "expire-after": notice.get("expire-after", ""),
-                        "repeat-after": notice.get("repeat-after", ""),
-                    }
-                )
+        # The notice's ``key`` is the warning body; the ``occurred`` fields map to
+        # the ops ``added`` fields. ``last-shown`` is a per-client concept that
+        # Pebble tracks in local CLI state rather than on the notice, so it's left
+        # unset.
+        return [
+            Warning.from_dict(
+                {
+                    "message": notice["key"],
+                    "first-added": notice["first-occurred"],
+                    "last-added": notice["last-occurred"],
+                    "expire-after": notice.get("expire-after", ""),
+                    "repeat-after": notice.get("repeat-after", ""),
+                }
             )
-        return warnings
+            for notice in data.get("warnings", [])
+        ]
 
     def ack_warnings(self, timestamp: datetime.datetime) -> int:
         """Unsupported: ``pebble okay`` acks stateful, not by timestamp."""
@@ -955,8 +934,7 @@ class PebbleCliClient:
         if not data:
             return {}
         return {
-            name: Identity.from_dict(identity)
-            for name, identity in data["identities"].items()
+            name: Identity.from_dict(identity) for name, identity in data["identities"].items()
         }
 
     def replace_identities(

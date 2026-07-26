@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
-import datetime
-import urllib.request
-from collections.abc import Iterable, Mapping
-from typing import Any, BinaryIO, Protocol, TextIO, overload
+from typing import TYPE_CHECKING, Any, BinaryIO, Protocol, TextIO, overload
 
 import ops
+
+if TYPE_CHECKING:
+    import datetime
+    import urllib.request
+    from collections.abc import Iterable, Mapping
 
 
 class PebbleClientProtocol(Protocol):
@@ -75,17 +77,13 @@ class PebbleClientProtocol(Protocol):
         combine: bool = False,
     ): ...
     def get_plan(self) -> ops.pebble.Plan: ...
-    def get_services(
-        self, names: Iterable[str] | None = None
-    ) -> list[ops.pebble.ServiceInfo]: ...
+    def get_services(self, names: Iterable[str] | None = None) -> list[ops.pebble.ServiceInfo]: ...
 
     @overload
     def pull(self, path: str, *, encoding: None) -> BinaryIO: ...
     @overload
     def pull(self, path: str, *, encoding: str = "utf-8") -> TextIO: ...
-    def pull(
-        self, path: str, *, encoding: str | None = "utf-8"
-    ) -> BinaryIO | TextIO: ...
+    def pull(self, path: str, *, encoding: str | None = "utf-8") -> BinaryIO | TextIO: ...
 
     def push(
         self,

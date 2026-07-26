@@ -34,7 +34,7 @@ dev = [
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0",
     "pytest-mock>=3.10.0",
-    "ruff==0.15.21",
+    "ruff==0.16.0",
     "ty==0.0.61",
     "tox>=4.0.0",
     "pre-commit>=3.0.0",
@@ -60,35 +60,6 @@ include = [
 ]
 
 # Ruff configuration
-[tool.ruff]
-line-length = 88
-target-version = "py311"
-src = ["src", "tests"]
-
-[tool.ruff.lint]
-select = [
-    "E",  # pycodestyle errors
-    "W",  # pycodestyle warnings
-    "F",  # pyflakes
-    "I",  # isort
-    "B",  # flake8-bugbear
-    "C4", # flake8-comprehensions
-    "UP", # pyupgrade
-    "N",  # pep8-naming
-]
-ignore = [
-    "E501",  # line too long, handled by formatter
-    "B008",  # do not perform function calls in argument defaults
-    "C901",  # too complex
-]
-
-[tool.ruff.lint.per-file-ignores]
-"tests/*" = ["N802", "N803", "N806"]  # Allow non-lowercase variable names in tests
-
-[tool.ruff.lint.isort]
-known-first-party = ["shimmer"]
-
-# Pytest configuration
 [tool.pytest.ini_options]
 minversion = "7.0"
 addopts = [
@@ -130,3 +101,56 @@ precision = 2
 
 [tool.coverage.html]
 directory = "htmlcov"
+
+[tool.ruff]
+line-length = 99
+target-version = "py311"
+
+[tool.ruff.lint]
+select = [
+    "F",
+    "E",
+    "W",
+    "I",
+    "N",
+    "A",
+    "UP",
+    "YTT",
+    "S",
+    "B",
+    "SIM",
+    "RUF",
+    "PERF",
+    "D",
+    "FA",
+    "TC",
+]
+ignore = [
+    "D105",
+    "D107",
+    "D203",
+    "D204",
+    "D213",
+    "D215",
+    "D400",
+    "D404",
+    "D406",
+    "D407",
+    "D408",
+    "D409",
+    "D413",
+    "E501",
+    "B008",
+    # Method docstrings are not mandated; module/class/function docs are.
+    "D102",
+    # This tool deliberately shells out to juju/charmcraft/snap.
+    "S603",
+    "S607",
+    # Mirrors the ops.pebble API surface (id/type/input, ConnectionError).
+    "A002",
+    "A004",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"demo.py" = ["S108", "S103", "D103"]  # A throwaway demo script, not shipped code.
+"**/tests/**" = ["S101", "S105", "S106", "S108", "PLR2004", "ARG", "SLF001", "N802", "N803", "N806", "D"]

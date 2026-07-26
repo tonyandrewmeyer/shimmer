@@ -127,7 +127,7 @@ class ExecProcess:
         """Send signal to the running process."""
         if isinstance(sig, str):
             sig = getattr(signal, sig.upper())
-            assert isinstance(sig, int)
+            assert isinstance(sig, int)  # noqa: S101  # Type narrowing.
 
         if not self._finished:
             self._process.send_signal(sig)
