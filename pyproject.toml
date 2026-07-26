@@ -38,6 +38,7 @@ dev = [
     "ty==0.0.61",
     "tox>=4.0.0",
     "pre-commit>=3.0.0",
+    "zizmor>=1.28.0",
 ]
 
 [project.urls]
