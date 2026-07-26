@@ -14,8 +14,10 @@ import os
 import pathlib
 import subprocess
 import tempfile
-from collections.abc import Mapping
-from typing import IO, Any, Protocol, runtime_checkable
+from typing import IO, TYPE_CHECKING, Any, Protocol, runtime_checkable
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 
 @runtime_checkable

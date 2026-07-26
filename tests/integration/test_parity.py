@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import signal
 import time
+from typing import ClassVar
 
 import ops
 import pytest
@@ -182,9 +183,7 @@ class TestFileParity:
         content = b"\x00\x01\x02\x03\xff\xfe\xfd"
         for client in twins.both:
             client.push("/tmp/parity_bin", content)
-        s, c = both_results(
-            twins, lambda cl: cl.pull("/tmp/parity_bin", encoding=None).read()
-        )
+        s, c = both_results(twins, lambda cl: cl.pull("/tmp/parity_bin", encoding=None).read())
         assert s == c == content
 
     def test_list_files(self, twins: Twins):
@@ -199,17 +198,13 @@ class TestFileParity:
         for client in twins.both:
             client.push("/tmp/parity_glob/keep.log", "x", make_dirs=True)
             client.push("/tmp/parity_glob/skip.txt", "y", make_dirs=True)
-        s, c = both_results(
-            twins, lambda cl: cl.list_files("/tmp/parity_glob", pattern="*.log")
-        )
+        s, c = both_results(twins, lambda cl: cl.list_files("/tmp/parity_glob", pattern="*.log"))
         assert_parity(s, c)
 
     def test_make_dir(self, twins: Twins):
         for client in twins.both:
             client.make_dir("/tmp/parity_mkdir/sub", make_parents=True)
-        s, c = both_results(
-            twins, lambda cl: cl.list_files("/tmp/parity_mkdir", itself=True)
-        )
+        s, c = both_results(twins, lambda cl: cl.list_files("/tmp/parity_mkdir", itself=True))
         assert_parity(s, c)
 
     def test_remove_path(self, twins: Twins):
@@ -225,9 +220,7 @@ class TestFileParity:
 
 class TestExecParity:
     def test_exec_simple(self, twins: Twins):
-        s, c = both_results(
-            twins, lambda cl: cl.exec(["echo", "hello world"]).wait_output()
-        )
+        s, c = both_results(twins, lambda cl: cl.exec(["echo", "hello world"]).wait_output())
         assert s == c
 
     def test_exec_environment(self, twins: Twins):
@@ -239,15 +232,11 @@ class TestExecParity:
         assert s == c
 
     def test_exec_working_dir(self, twins: Twins):
-        s, c = both_results(
-            twins, lambda cl: cl.exec(["pwd"], working_dir="/tmp").wait_output()
-        )
+        s, c = both_results(twins, lambda cl: cl.exec(["pwd"], working_dir="/tmp").wait_output())
         assert s == c
 
     def test_exec_stdin(self, twins: Twins):
-        s, c = both_results(
-            twins, lambda cl: cl.exec(["cat"], stdin="piped\n").wait_output()
-        )
+        s, c = both_results(twins, lambda cl: cl.exec(["cat"], stdin="piped\n").wait_output())
         assert s == c
 
     def test_exec_failure(self, twins: Twins):
@@ -337,7 +326,7 @@ class TestNoticeParity:
 class TestIdentityParity:
     # Use 'local' (user-id) identities: 'basic' auth stores a salted password
     # hash that differs between daemons, which is not a real divergence.
-    IDENTITIES: dict[str, ops.pebble.IdentityDict] = {
+    IDENTITIES: ClassVar[dict[str, ops.pebble.IdentityDict]] = {
         "alice": {"access": "admin", "local": {"user-id": 1000}}
     }
 
@@ -367,9 +356,7 @@ class TestErrorParity:
 
     def test_pull_missing_file(self, twins: Twins):
         # Both must raise ops.pebble.PathError (not APIError).
-        socket_exc, _ = assert_same_exception(
-            twins, lambda cl: cl.pull("/nonexistent/file.txt")
-        )
+        socket_exc, _ = assert_same_exception(twins, lambda cl: cl.pull("/nonexistent/file.txt"))
         assert isinstance(socket_exc, ops.pebble.PathError)
 
     def test_remove_missing_file(self, twins: Twins):

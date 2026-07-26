@@ -134,6 +134,7 @@ directory (or pass `socket_path=`); check `pebble version`.
 
 ```python
 import logging
+
 logging.basicConfig(level=logging.DEBUG)
 ```
 

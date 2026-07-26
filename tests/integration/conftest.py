@@ -20,16 +20,18 @@ from __future__ import annotations
 import dataclasses
 import datetime
 import enum
-import pathlib
 import subprocess
 import time
-from collections.abc import Callable, Generator
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import ops
 import pytest
 
 from shimmer import PebbleCliClient
+
+if TYPE_CHECKING:
+    import pathlib
+    from collections.abc import Callable, Generator
 
 pytestmark = pytest.mark.integration
 
@@ -166,13 +168,9 @@ def _twin_daemons(
     """Boot two identical daemons from ``layer`` and yield matched clients."""
     processes: list[subprocess.Popen[bytes]] = []
     try:
-        socket_proc, socket_path = _start_daemon(
-            pebble_binary, tmp_path / "socket", layer
-        )
+        socket_proc, socket_path = _start_daemon(pebble_binary, tmp_path / "socket", layer)
         processes.append(socket_proc)
-        cli_proc, cli_socket_path = _start_daemon(
-            pebble_binary, tmp_path / "cli", layer
-        )
+        cli_proc, cli_socket_path = _start_daemon(pebble_binary, tmp_path / "cli", layer)
         processes.append(cli_proc)
 
         socket_client = ops.pebble.Client(socket_path=socket_path)
@@ -198,9 +196,7 @@ def twins(pebble_binary: str, tmp_path: pathlib.Path) -> Generator[Twins, None, 
 
 
 @pytest.fixture
-def twins_no_checks(
-    pebble_binary: str, tmp_path: pathlib.Path
-) -> Generator[Twins, None, None]:
+def twins_no_checks(pebble_binary: str, tmp_path: pathlib.Path) -> Generator[Twins, None, None]:
     """Two identical Pebble daemons with no health checks.
 
     Use for change-list comparisons, where recurring check changes would
@@ -280,7 +276,7 @@ def capture_exc(client: Any, op: Callable[[Any], Any]) -> BaseException | None:
     """Run ``op(client)`` and return the exception it raised, or None."""
     try:
         op(client)
-    except BaseException as exc:  # noqa: BLE001 - we re-inspect the type
+    except BaseException as exc:
         return exc
     return None
 
@@ -316,14 +312,13 @@ def assert_same_outcome(
     def outcome(client: Any) -> tuple[str, Any]:
         try:
             return ("returned", op(client))
-        except BaseException as exc:  # noqa: BLE001
+        except BaseException as exc:
             return ("raised", exc)
 
     socket_kind, socket_val = outcome(twins.socket)
     cli_kind, cli_val = outcome(twins.cli)
     assert socket_kind == cli_kind, (
-        f"outcome mismatch: socket {socket_kind} {socket_val!r}, "
-        f"cli {cli_kind} {cli_val!r}"
+        f"outcome mismatch: socket {socket_kind} {socket_val!r}, cli {cli_kind} {cli_val!r}"
     )
     if socket_kind == "returned":
         assert_parity(socket_val, cli_val, drop=drop)

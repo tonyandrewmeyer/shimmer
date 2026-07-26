@@ -69,7 +69,7 @@ def _socket_path() -> str:
 
 
 def socket_client() -> ops.pebble.Client:
-    """The real ops client, talking to the daemon over its unix socket."""
+    """Return the real ops client, talking to the daemon over its unix socket."""
     return ops.pebble.Client(socket_path=_socket_path())
 
 
@@ -140,9 +140,7 @@ def _find(getter, name: str):
 def curl_status(url: str = HTTP_URL) -> str:
     """Return the HTTP status line, retrying while the server comes up."""
     for _ in range(20):
-        proc = subprocess.run(
-            ["curl", "-s", "-i", "-m", "2", url], capture_output=True, text=True
-        )
+        proc = subprocess.run(["curl", "-s", "-i", "-m", "2", url], capture_output=True, text=True)
         first = proc.stdout.splitlines()[0].strip() if proc.stdout else ""
         if first.startswith("HTTP"):
             return first
@@ -230,51 +228,70 @@ def build_demo() -> bool:
     showboat("init", DEMO_FILE, "Shimmer: a drop-in Pebble client over the CLI")
 
     steps: list[tuple[str, ...]] = [
-        ("note",
-         "**Shimmer** provides `PebbleCliClient`, a drop-in replacement for "
-         "`ops.pebble.Client` that drives Pebble through its **CLI** instead of "
-         "the unix socket — for environments where the socket isn't reachable. "
-         "The contract is *parity*: same methods, same return types, same "
-         "exceptions. This document proves it."),
-
+        (
+            "note",
+            "**Shimmer** provides `PebbleCliClient`, a drop-in replacement for "
+            "`ops.pebble.Client` that drives Pebble through its **CLI** instead of "
+            "the unix socket — for environments where the socket isn't reachable. "
+            "The contract is *parity*: same methods, same return types, same "
+            "exceptions. This document proves it.",
+        ),
         ("note", "## The claim, proven"),
-        ("note",
-         "We run one deploy-and-verify routine against the **real socket "
-         "client**, then the **exact same routine** against Shimmer, and compare "
-         "the results. First, `ops.pebble.Client` over the unix socket:"),
-        ("exec", "bash", _py(
-            "from demo import socket_client, run_and_capture\n"
-            "run_and_capture(socket_client(), '/tmp/shimmer-parity/socket.txt')")),
-
-        ("note",
-         "Now the **same code**, but through `shimmer.PebbleCliClient`. The "
-         "dimmed `$ pebble …` lines are the actual commands it shells out:"),
-        ("exec", "bash", _py(
-            "from demo import cli_client, run_and_capture\n"
-            "run_and_capture(cli_client(trace=True), '/tmp/shimmer-parity/cli.txt')")),
-
+        (
+            "note",
+            "We run one deploy-and-verify routine against the **real socket "
+            "client**, then the **exact same routine** against Shimmer, and compare "
+            "the results. First, `ops.pebble.Client` over the unix socket:",
+        ),
+        (
+            "exec",
+            "bash",
+            _py(
+                "from demo import socket_client, run_and_capture\n"
+                "run_and_capture(socket_client(), '/tmp/shimmer-parity/socket.txt')"
+            ),
+        ),
+        (
+            "note",
+            "Now the **same code**, but through `shimmer.PebbleCliClient`. The "
+            "dimmed `$ pebble …` lines are the actual commands it shells out:",
+        ),
+        (
+            "exec",
+            "bash",
+            _py(
+                "from demo import cli_client, run_and_capture\n"
+                "run_and_capture(cli_client(trace=True), '/tmp/shimmer-parity/cli.txt')"
+            ),
+        ),
         ("note", "## Identical results"),
-        ("note",
-         "Two transports, one set of outputs. `diff` finds nothing to report:"),
-        ("exec", "bash",
-         "diff /tmp/shimmer-parity/socket.txt /tmp/shimmer-parity/cli.txt "
-         "&& echo 'PARITY: identical ✓'"),
-
+        ("note", "Two transports, one set of outputs. `diff` finds nothing to report:"),
+        (
+            "exec",
+            "bash",
+            "diff /tmp/shimmer-parity/socket.txt /tmp/shimmer-parity/cli.txt "
+            "&& echo 'PARITY: identical ✓'",
+        ),
         ("note", "## The service is really running"),
-        ("note",
-         "The deployed layer runs `python3 -m http.server`. That's a real "
-         "process serving real traffic — here's the live response (the "
-         "volatile `Date` header is filtered so the document stays verifiable):"),
-        ("exec", "bash",
-         f"curl -s -i {HTTP_URL} | tr -d '\\r' | grep -vi '^date:' | head -3"),
-
+        (
+            "note",
+            "The deployed layer runs `python3 -m http.server`. That's a real "
+            "process serving real traffic — here's the live response (the "
+            "volatile `Date` header is filtered so the document stays verifiable):",
+        ),
+        ("exec", "bash", f"curl -s -i {HTTP_URL} | tr -d '\\r' | grep -vi '^date:' | head -3"),
         ("note", "## Cleanup"),
-        ("exec", "bash", _py(
-            "from demo import cli_client\n"
-            "c = cli_client()\n"
-            "c.stop_services(['demo-server'])\n"
-            "print('demo-server:', "
-            "next(s for s in c.get_services() if s.name == 'demo-server').current.value)")),
+        (
+            "exec",
+            "bash",
+            _py(
+                "from demo import cli_client\n"
+                "c = cli_client()\n"
+                "c.stop_services(['demo-server'])\n"
+                "print('demo-server:', "
+                "next(s for s in c.get_services() if s.name == 'demo-server').current.value)"
+            ),
+        ),
     ]
 
     ok = True
@@ -359,11 +376,17 @@ tmux attach -t "$S"
     print(f"Recording tmux side-by-side to {CAST_FILE} ...")
     subprocess.run(
         [
-            "asciinema", "rec",
-            "--cols", "200", "--rows", "50",
-            "--idle-time-limit", "2",
+            "asciinema",
+            "rec",
+            "--cols",
+            "200",
+            "--rows",
+            "50",
+            "--idle-time-limit",
+            "2",
             "--overwrite",
-            "--command", f"bash {driver}",
+            "--command",
+            f"bash {driver}",
             CAST_FILE,
         ],
         check=True,
@@ -376,17 +399,24 @@ tmux attach -t "$S"
 # --------------------------------------------------------------------------- #
 def main() -> None:
     parser = argparse.ArgumentParser(description="Shimmer parity demo")
-    parser.add_argument("--client", choices=["socket", "cli"],
-                        help="run the workload via one client (used by the tmux panes)")
+    parser.add_argument(
+        "--client",
+        choices=["socket", "cli"],
+        help="run the workload via one client (used by the tmux panes)",
+    )
     parser.add_argument("--results", help="write canonical result lines here")
-    parser.add_argument("--record", action="store_true",
-                        help="record the tmux side-by-side comparison")
+    parser.add_argument(
+        "--record", action="store_true", help="record the tmux side-by-side comparison"
+    )
     args = parser.parse_args()
 
     if args.client:
         client = socket_client() if args.client == "socket" else cli_client(trace=True)
-        header = ("ops.pebble.Client  (unix socket)" if args.client == "socket"
-                  else "shimmer.PebbleCliClient  (CLI)")
+        header = (
+            "ops.pebble.Client  (unix socket)"
+            if args.client == "socket"
+            else "shimmer.PebbleCliClient  (CLI)"
+        )
         say(f"=== {header} ===\n")
         if args.results:
             run_and_capture(client, args.results)
