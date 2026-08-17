@@ -1,3 +1,13 @@
+# 2026-08-17
+
+Bug fixes and packaging:
+
+- `shimmer.ExecProcess` is now generic over `AnyStr`, matching
+  `ops.pebble.ExecProcess`. Annotations such as `ExecProcess[str]` and
+  `ExecProcess[bytes]` now type-check, and `wait_output()` is typed as
+  returning `tuple[AnyStr, AnyStr | None]` rather than
+  `tuple[str | bytes, str | bytes | None]`. Runtime behaviour is unchanged.
+
 # 2026-07-14
 
 Features:
