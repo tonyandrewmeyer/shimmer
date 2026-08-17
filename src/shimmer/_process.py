@@ -2,17 +2,21 @@ from __future__ import annotations
 
 import signal
 import subprocess
-from typing import Any
+from typing import IO, Any, AnyStr, Generic, cast
 
 import ops
 
 
-class ExecProcess:
+class ExecProcess(Generic[AnyStr]):
     """ExecProcess implementation for CLI-based execution.
 
     This class mimics the behavior of ops.pebble.ExecProcess but uses
     subprocess for execution instead of websockets.
     """
+
+    stdin: IO[AnyStr] | None
+    stdout: IO[AnyStr] | None
+    stderr: IO[AnyStr] | None
 
     def __init__(
         self,
@@ -82,10 +86,10 @@ class ExecProcess:
             stderr=stderr_data or "",
         )
 
-    def wait_output(self) -> tuple[str | bytes, str | bytes | None]:
+    def wait_output(self) -> tuple[AnyStr, AnyStr | None]:
         """Wait for the process to finish and return (stdout, stderr)."""
         if self._finished and self._stdout_data is not None:
-            return self._stdout_data, self._stderr_data
+            return cast("AnyStr", self._stdout_data), cast("AnyStr | None", self._stderr_data)
 
         try:
             stdout_data, stderr_data = self._process.communicate(
@@ -121,7 +125,7 @@ class ExecProcess:
                 stderr=stderr_data,
             )
 
-        return stdout_data, stderr_data
+        return cast("AnyStr", stdout_data), cast("AnyStr | None", stderr_data)
 
     def send_signal(self, sig: int | str):
         """Send signal to the running process."""
