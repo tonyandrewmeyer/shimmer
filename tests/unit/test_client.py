@@ -164,6 +164,103 @@ class TestPebbleCliClient:
         assert "code 3" in exc_info.value.message
         assert exc_info.value.code == 500
 
+    # Real stderr captured from `pebble ls` against Pebble v1.33.0 with stdout
+    # piped (so the CLI wraps at its no-TTY width of 80 columns). The marker
+    # "no such file or directory" straddles the wrap, which is what used to
+    # defeat classification.
+    WRAPPED_NOT_FOUND = (
+        "error: stat /nope/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa: no such\n"
+        "       file or directory"
+    )
+    # Real stderr captured from `pebble add` against Pebble v1.33.0, wrapping
+    # over three lines.
+    WRAPPED_PLAN_ERROR = (
+        "error: cannot parse layer YAML: plan service\n"
+        '       "a-service-with-quite-a-long-name-here" on-failure action\n'
+        '       "this-action-name-is-not-valid-at-all" invalid'
+    )
+
+    def test_run_command_api_error_unwraps_wrapped_message(
+        self, mock_subprocess: Mock, client: PebbleCliClient
+    ):
+        """The CLI's word wrapping is undone, so the message matches the socket client's."""
+        mock_subprocess.run.side_effect = subprocess.CalledProcessError(
+            1, "cmd", stderr=self.WRAPPED_PLAN_ERROR
+        )
+
+        with pytest.raises(ops.pebble.APIError) as exc_info:
+            client._run_command(["test"])
+
+        err = exc_info.value
+        # One line, single-spaced, byte-identical to what ops.pebble.Client reports.
+        assert err.message == (
+            'cannot parse layer YAML: plan service "a-service-with-quite-a-long-name-here" '
+            'on-failure action "this-action-name-is-not-valid-at-all" invalid'
+        )
+        assert "\n" not in err.message
+        assert err.body["result"]["message"] == err.message
+
+    def test_run_command_api_error_classifies_wrapped_marker(
+        self, mock_subprocess: Mock, client: PebbleCliClient
+    ):
+        """A marker split across the CLI's wrap is still classified.
+
+        Regression test: the status used to depend on the length of the path in
+        the message, because a long enough path pushed "no such file or
+        directory" across a line break and no marker matched any more.
+        """
+        mock_subprocess.run.side_effect = subprocess.CalledProcessError(
+            1, "cmd", stderr=self.WRAPPED_NOT_FOUND
+        )
+
+        with pytest.raises(ops.pebble.APIError) as exc_info:
+            client._run_command(["test"])
+
+        err = exc_info.value
+        assert err.message == (
+            "stat /nope/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa: "
+            "no such file or directory"
+        )
+        assert err.code == 404
+        assert err.status == "Not Found"
+
+    def test_list_files_wrapped_not_found_still_raises_path_error(
+        self, mock_subprocess: Mock, client: PebbleCliClient
+    ):
+        """A wrapped not-found message still becomes a PathError, not a bare APIError."""
+        mock_subprocess.run.side_effect = subprocess.CalledProcessError(
+            1, "cmd", stderr=self.WRAPPED_NOT_FOUND
+        )
+
+        with pytest.raises(ops.pebble.PathError) as exc_info:
+            client.list_files("/nope/" + "a" * 48)
+
+        assert exc_info.value.kind == "not-found"
+
+    @pytest.mark.parametrize(
+        ("stderr", "expected"),
+        [
+            # Nothing to unwrap.
+            ("error: short message", "error: short message"),
+            # A continuation line is rejoined with exactly one space.
+            ("error: first part\n       second part", "error: first part second part"),
+            # Several continuation lines collapse onto the first.
+            ("error: a\n       b\n       c", "error: a b c"),
+            # An unindented second line is not a continuation and is kept.
+            ("error: one\nerror: two", "error: one\nerror: two"),
+            # Blank lines are dropped rather than joined onto.
+            ("error: one\n\n       two", "error: one\ntwo"),
+            # A whitespace-only continuation line must not leave a trailing space.
+            ("error: one\n       \n       two", "error: one\ntwo"),
+            # Trailing newlines from the captured stream are harmless.
+            ("error: one\n       two\n", "error: one two"),
+            ("", ""),
+        ],
+    )
+    def test_unwrap_cli_error(self, client: PebbleCliClient, stderr: str, expected: str):
+        """The unwrapper rejoins continuation lines and leaves everything else alone."""
+        assert client._unwrap_cli_error(stderr) == expected
+
     def test_run_command_file_not_found(self, mock_subprocess: Mock, client: PebbleCliClient):
         """Test handling of missing pebble binary."""
         mock_subprocess.run.side_effect = FileNotFoundError()
