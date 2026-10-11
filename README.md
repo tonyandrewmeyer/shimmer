@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="https://raw.githubusercontent.com/tonyandrewmeyer/shimmer/main/assets/shimmer-logo.png" alt="Shimmer" width="480">
+</p>
+
 # Shimmer — a shiny Pebble client
 
 A 100% compatible, drop-in replacement for `ops.pebble.Client` that drives
