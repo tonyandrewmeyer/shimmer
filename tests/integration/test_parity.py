@@ -365,5 +365,29 @@ class TestErrorParity:
         )
         assert isinstance(socket_exc, ops.pebble.PathError)
 
+    # Long enough that the CLI word-wraps its ``error:`` output. At this length
+    # the wrap lands inside "no such file or directory", which used to stop
+    # shimmer recognising the error at all -- so it raised a bare APIError
+    # instead of the PathError the socket client raises.
+    WRAPPED_MISSING_PATH = "/nonexistent/" + "a" * 42
+
+    def test_pull_missing_file_long_path(self, twins: Twins):
+        """A path long enough to wrap the CLI's error behaves like a short one.
+
+        Regression test for the status/kind depending on the length of the
+        path: the CLI wraps its error message, and the wrap used to hide the
+        "no such file or directory" marker, so this raised a bare APIError
+        while the socket client raised a PathError.
+        """
+        socket_exc, cli_exc = assert_same_exception(
+            twins, lambda cl: cl.pull(self.WRAPPED_MISSING_PATH)
+        )
+        assert isinstance(socket_exc, ops.pebble.PathError)
+        assert isinstance(cli_exc, ops.pebble.PathError)
+        assert cli_exc.kind == socket_exc.kind
+        # The wrapping must not survive into the message the caller sees.
+        assert "\n" not in cli_exc.message
+        assert cli_exc.message == socket_exc.message
+
     def test_get_change_unknown_id(self, twins: Twins):
         assert_same_exception(twins, lambda cl: cl.get_change("999999"))

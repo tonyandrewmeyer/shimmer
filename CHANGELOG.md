@@ -1,3 +1,23 @@
+# 2026-10-02
+
+Bug fixes and packaging:
+
+- Error messages reported by `PebbleCliClient` are no longer broken across
+  several lines. The `pebble` CLI word-wraps the text it prints after
+  `error:` to the terminal width, and shimmer was passing that wrapping
+  through, so `APIError.message` (and `PathError`'s message) could contain
+  line breaks and runs of spaces that `ops.pebble.Client` never produces.
+  Messages longer than about 70 characters are now reported as the single
+  line the socket client reports.
+- A failing operation is no longer classified differently depending on how
+  long the text of its error happens to be. Because shimmer recovers the
+  HTTP status and `PathError` kind from the message text, the CLI's wrapping
+  could split the phrase it was looking for across a line break: a missing
+  path of one length raised `PathError('not-found')` and a missing path of
+  another raised a bare `APIError` with status 500. Affected operations --
+  `pull()`, `list_files()`, `remove_path()`, `make_dir()` and anything else
+  reporting a long error -- now raise what `ops.pebble.Client` raises.
+
 # 2026-08-17
 
 Bug fixes and packaging:
