@@ -164,6 +164,116 @@ class TestPebbleCliClient:
         assert "code 3" in exc_info.value.message
         assert exc_info.value.code == 500
 
+    # The Pebble CLI word-wraps error messages before printing them (``fill(msg,
+    # len("error: "))``), so anything longer than ~72 characters comes back split
+    # across lines with continuation lines indented by seven spaces. The stderr
+    # strings below were captured from a real Pebble v1.33.2 daemon.
+    @pytest.mark.parametrize(
+        ("stderr", "code", "message"),
+        [
+            # The wrap lands in the middle of "no such file or directory" -- the
+            # exact phrase the not-found classifier matches on. Unwrapped this is
+            # a 404; left wrapped it is an unclassifiable 500, which is the bug.
+            (
+                "error: stat /nonexistent/" + "a" * 42 + ": no such\n       file or directory",
+                404,
+                "stat /nonexistent/" + "a" * 42 + ": no such file or directory",
+            ),
+            # Wrapped at a point that happens to leave the phrase intact: the
+            # status was already right here, but the message must still come back
+            # without the line break and seven-space run.
+            (
+                "error: stat /nonexistent/" + "a" * 46 + ":\n       no such file or directory",
+                404,
+                "stat /nonexistent/" + "a" * 46 + ": no such file or directory",
+            ),
+            # Wrapped onto three lines, with the first break straight after "stat".
+            (
+                "error: stat\n       /nonexistent/"
+                + "a" * 60
+                + ":\n       no such file or directory",
+                404,
+                "stat /nonexistent/" + "a" * 60 + ": no such file or directory",
+            ),
+            # A wrapped layer-validation error. Still a 500 (shimmer can't yet
+            # classify plan errors as 400), but the message must be clean.
+            (
+                'error: cannot parse layer YAML: cannot specify "service.name" label for\n'
+                '       opentelemetry log target "tgt1"',
+                500,
+                'cannot parse layer YAML: cannot specify "service.name" label for '
+                'opentelemetry log target "tgt1"',
+            ),
+            # A short message is not wrapped and must pass through unchanged.
+            (
+                'error: cannot start services: service "x" does not exist',
+                400,
+                'cannot start services: service "x" does not exist',
+            ),
+        ],
+    )
+    def test_run_command_api_error_unwraps_cli_word_wrap(
+        self,
+        mock_subprocess: Mock,
+        client: PebbleCliClient,
+        stderr: str,
+        code: int,
+        message: str,
+    ):
+        """The CLI's word-wrapping is undone before classifying and reporting."""
+        mock_subprocess.run.side_effect = subprocess.CalledProcessError(1, "cmd", stderr=stderr)
+
+        with pytest.raises(ops.pebble.APIError) as exc_info:
+            client._run_command(["test"])
+
+        err = exc_info.value
+        # The socket client never produces a message containing a line break.
+        assert "\n" not in err.message
+        assert err.message == message
+        assert err.code == code
+        assert err.body["result"]["message"] == message
+
+    def test_run_command_api_error_keeps_unrecognised_line_breaks(
+        self, mock_subprocess: Mock, client: PebbleCliClient
+    ):
+        """A line that isn't a wrap continuation keeps its break."""
+        # Only lines indented by exactly the width of "error: " are continuations;
+        # anything else is output we don't recognise and pass through untouched
+        # rather than risk mangling it.
+        mock_subprocess.run.side_effect = subprocess.CalledProcessError(
+            1, "cmd", stderr="error: first thing went wrong\nsecond thing went wrong"
+        )
+
+        with pytest.raises(ops.pebble.APIError) as exc_info:
+            client._run_command(["test"])
+
+        assert exc_info.value.message == "first thing went wrong\nsecond thing went wrong"
+
+    def test_pull_wrapped_not_found_raises_path_error(
+        self, mock_subprocess: Mock, client: PebbleCliClient
+    ):
+        """A wrapped not-found error still maps to PathError, not APIError.
+
+        Regression test for the length-dependent failure: the wrap split the
+        phrase ``_raise_path_error`` matches on, so a long enough path turned a
+        ``PathError('not-found')`` into a bare ``APIError(500)``.
+        """
+        path = "/nonexistent/" + "a" * 42
+
+        def fake_run(cmd, **kwargs):
+            os.unlink(cmd[-1])
+            raise subprocess.CalledProcessError(
+                1, "cmd", stderr=f"error: stat {path}: no such\n       file or directory"
+            )
+
+        mock_subprocess.run.side_effect = fake_run
+
+        with pytest.raises(ops.pebble.PathError) as exc_info:
+            client.pull(path)
+
+        assert exc_info.value.kind == "not-found"
+        assert exc_info.value.message == f"stat {path}: no such file or directory"
+
     def test_run_command_file_not_found(self, mock_subprocess: Mock, client: PebbleCliClient):
         """Test handling of missing pebble binary."""
         mock_subprocess.run.side_effect = FileNotFoundError()

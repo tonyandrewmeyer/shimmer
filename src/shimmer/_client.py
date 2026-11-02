@@ -120,22 +120,60 @@ class PebbleCliClient:
     _NOT_FOUND_MARKERS = ("no such file or directory", "cannot find", "not found")
     _BAD_REQUEST_MARKERS = ("does not exist", "already exists")
 
+    # Before printing an error the CLI runs it through ``fill(msg, len("error: "))``
+    # (``internals/cli/cli.go``), which re-flows the message to the terminal width
+    # and indents every continuation line by seven spaces -- the width of the
+    # ``error: `` prefix. When we capture stderr, stdout is not a TTY, so the width
+    # is 80; the wrap width is also capped at 100, so it cannot be turned off by
+    # setting ``COLUMNS``. Undoing the wrap matters twice over: the socket client's
+    # messages never contain line breaks, and we recover both the HTTP status and
+    # the ``PathError`` kind *from the message text*, so a wrap that lands in the
+    # middle of a phrase we match on would otherwise change the exception the
+    # caller sees based on nothing but the length of the message.
+    _WRAP_INDENT = " " * len("error: ")
+
+    @classmethod
+    def _unwrap(cls, message: str) -> str:
+        """Undo the word-wrapping the Pebble CLI applies to an error message.
+
+        Continuation lines -- those indented by exactly the width of the
+        ``error: `` prefix -- are rejoined with a single space, which reverses
+        the wrap exactly for the single-paragraph messages Pebble's daemon
+        produces. A line we don't recognise as a continuation keeps its break,
+        so unexpected output is passed through rather than mangled.
+
+        A message that genuinely contained a newline cannot be recovered: the
+        CLI re-flowed it before we ever saw it, so it arrives indistinguishable
+        from a wrap and collapses to a space.
+        """
+        head, *rest = message.split("\n")
+        parts = [head]
+        for line in rest:
+            if line.startswith(cls._WRAP_INDENT):
+                parts.append(" " + line[len(cls._WRAP_INDENT) :])
+            else:
+                parts.append("\n" + line)
+        return "".join(parts)
+
     @classmethod
     def _api_error_from_stderr(cls, stderr: str | None, returncode: int) -> APIError:
         """Build an ``APIError`` mirroring ops.pebble.Client as closely as possible.
 
         The Pebble CLI reports daemon errors as ``error: <message>`` on stderr
         and exits non-zero, without exposing the HTTP status the socket client
-        sees. We strip that ``error:`` prefix -- so ``message`` matches the
-        socket client's message verbatim -- and infer ``code``/``status`` from
-        the text, falling back to ``500`` when the error can't be classified.
+        sees. We strip that ``error:`` prefix and undo the CLI's word-wrapping
+        -- so ``message`` matches the socket client's message verbatim -- and
+        infer ``code``/``status`` from the text, falling back to ``500`` when
+        the error can't be classified.
         ``body`` is reconstructed in Pebble's API wire format so callers that
         inspect it (e.g. branching on ``code == 404``) see the same shape they
         would from ops.pebble.Client.
         """
         message = (stderr or "").strip()
         if message[:6].lower() == "error:":
-            message = message[6:].strip()
+            # The prefix is only ever printed together with the wrap, so its
+            # presence is what tells us the message needs unwrapping.
+            message = cls._unwrap(message[6:].strip())
         if not message:
             message = f"pebble CLI exited with code {returncode}"
 

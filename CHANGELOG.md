@@ -1,3 +1,23 @@
+# 2026-11-02
+
+Bug fixes and packaging:
+
+- Error messages from the CLI are no longer word-wrapped. The Pebble CLI
+  re-flows its `error:` output to the terminal width and indents
+  continuation lines, so any message longer than about 72 characters
+  reached callers with line breaks and runs of spaces embedded in it,
+  which `ops.pebble.Client` never produces. Shimmer now undoes the wrap,
+  so `APIError.message` and `PathError.message` match the socket client
+  verbatim again.
+- Fixed a length-dependent bug where a long error message could raise the
+  wrong exception. Because shimmer recovers the HTTP status and the
+  `PathError` kind from the message text, a wrap landing in the middle of
+  the phrase it matched on changed the result: `pull()`,
+  `list_files()`, `remove_path()` and `make_dir()` on a sufficiently long
+  path raised `APIError` with status 500 instead of
+  `PathError('not-found')`. Which paths were affected depended only on how
+  long the message was.
+
 # 2026-08-17
 
 Bug fixes and packaging:
