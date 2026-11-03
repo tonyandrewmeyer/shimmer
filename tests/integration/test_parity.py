@@ -359,6 +359,21 @@ class TestErrorParity:
         socket_exc, _ = assert_same_exception(twins, lambda cl: cl.pull("/nonexistent/file.txt"))
         assert isinstance(socket_exc, ops.pebble.PathError)
 
+    def test_pull_missing_file_long_path(self, twins: Twins):
+        """A path long enough that the CLI word-wraps the error it reports.
+
+        The CLI re-flows error messages to the terminal width, and at this
+        length the wrap falls inside ``no such file or directory`` -- the exact
+        phrase shimmer recovers the ``PathError`` kind from. Both clients must
+        still raise ``PathError``, with the same kind and the same message.
+        """
+        path = "/nonexistent/" + "a" * 42
+        socket_exc, cli_exc = assert_same_exception(twins, lambda cl: cl.pull(path))
+        assert isinstance(socket_exc, ops.pebble.PathError)
+        assert isinstance(cli_exc, ops.pebble.PathError)
+        assert cli_exc.kind == socket_exc.kind
+        assert cli_exc.message == socket_exc.message
+
     def test_remove_missing_file(self, twins: Twins):
         socket_exc, _ = assert_same_exception(
             twins, lambda cl: cl.remove_path("/nonexistent/file.txt")
