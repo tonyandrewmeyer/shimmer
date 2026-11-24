@@ -1,3 +1,16 @@
+# 2026-11-24
+
+Bug fixes and packaging:
+
+- An unreachable Pebble is now reported as `ops.pebble.ConnectionError`, as
+  `ops.pebble.Client` does. Previously a missing socket was reported as
+  `APIError` with status 404 by commands that write, and as `TimeoutError` by
+  commands that read, so `ops.Container.can_connect()` raised instead of
+  returning `False`.
+- A command that does not finish within the client's timeout now raises an
+  exception that is both a `ConnectionError` and a `TimeoutError`, matching
+  `ops.pebble.Client`. Code that catches `TimeoutError` is unaffected.
+
 # 2026-11-02
 
 Bug fixes and packaging:

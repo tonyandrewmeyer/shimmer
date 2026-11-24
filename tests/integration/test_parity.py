@@ -15,11 +15,15 @@ shimmer and ops.pebble.Client (not a flaky test); see the reason string.
 from __future__ import annotations
 
 import signal
+import socket
 import time
-from typing import ClassVar
+from typing import TYPE_CHECKING, ClassVar
+from unittest import mock
 
 import ops
 import pytest
+
+from shimmer import PebbleCliClient
 
 from .conftest import (
     Twins,
@@ -29,6 +33,9 @@ from .conftest import (
     both_results,
     wait_until_ready,
 )
+
+if TYPE_CHECKING:
+    import pathlib
 
 pytestmark = pytest.mark.integration
 
@@ -382,3 +389,45 @@ class TestErrorParity:
 
     def test_get_change_unknown_id(self, twins: Twins):
         assert_same_exception(twins, lambda cl: cl.get_change("999999"))
+
+
+class TestUnreachableParity:
+    """Both clients must report an unreachable daemon the same way."""
+
+    @pytest.fixture(params=["missing", "refused"])
+    def twins(self, request, tmp_path: pathlib.Path, pebble_binary: str) -> Twins:
+        path = tmp_path / ".pebble.socket"
+        if request.param == "refused":
+            # A socket file with nothing listening on it.
+            with socket.socket(socket.AF_UNIX) as sock:
+                sock.bind(str(path))
+        return Twins(
+            socket=ops.pebble.Client(socket_path=str(path)),
+            # The default timeout, which the CLI's own retries outlast.
+            cli=PebbleCliClient(socket_path=str(path), pebble_binary=pebble_binary),
+        )
+
+    @pytest.mark.parametrize(
+        "op",
+        [
+            lambda cl: cl.get_services(),
+            lambda cl: cl.list_files("/"),
+            lambda cl: cl.add_layer("a", ""),
+            lambda cl: cl.start_services(["a"]),
+            lambda cl: cl.make_dir("/tmp/parity_unreachable"),
+        ],
+    )
+    def test_raises_connection_error(self, twins: Twins, op):
+        for client in twins.both:
+            with pytest.raises(ops.pebble.ConnectionError):
+                op(client)
+
+    def test_container_can_connect(self, twins: Twins):
+        for client in twins.both:
+            container = ops.Container("c", mock.Mock(), pebble_client=client)
+            assert container.can_connect() is False
+
+    def test_retry_error_is_connection_error(self, twins: Twins):
+        # A timeout long enough for the CLI to give up by itself.
+        twins.cli.timeout = 15.0
+        assert_same_exception(twins, lambda cl: cl.get_services())

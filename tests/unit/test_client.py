@@ -76,8 +76,67 @@ class TestPebbleCliClient:
         """Test command timeout handling."""
         mock_subprocess.run.side_effect = subprocess.TimeoutExpired("cmd", 5.0)
 
-        with pytest.raises(ops.pebble.TimeoutError):
+        with pytest.raises(ops.pebble.TimeoutError) as exc_info:
             client._run_command(["test"])
+
+        # As in ops.pebble.Client, a timeout is also a ConnectionError.
+        assert isinstance(exc_info.value, ops.pebble.ConnectionError)
+
+    # Captured from the Pebble v1.33.3 CLI with no daemon listening.
+    @pytest.mark.parametrize(
+        "message",
+        [
+            'cannot communicate with server: Post "http://localhost/v1/layers": '
+            'socket "/pebble/.pebble.socket" not found',
+            "cannot obtain system details: cannot communicate with server: "
+            'Get "http://localhost/v1/system-info": socket "/pebble/.pebble.socket" not found',
+            'cannot communicate with server: Get "http://localhost/v1/services?names=": '
+            "dial unix /pebble/.pebble.socket: connect: connection refused",
+            'cannot communicate with server: Post "http://localhost/v1/files": '
+            'cannot stat "/pebble/.pebble.socket": stat /pebble/.pebble.socket: '
+            "permission denied",
+        ],
+    )
+    def test_run_command_connection_error(
+        self, mock_subprocess: Mock, client: PebbleCliClient, message: str
+    ):
+        """Failing to reach the daemon is a ConnectionError, not an APIError."""
+        mock_subprocess.run.side_effect = subprocess.CalledProcessError(
+            1, "cmd", stderr=f"error: {message}"
+        )
+
+        with pytest.raises(ops.pebble.ConnectionError) as exc_info:
+            client._run_command(["test"])
+
+        assert str(exc_info.value) == message
+
+    def test_file_operation_connection_error(self, mock_subprocess: Mock, client: PebbleCliClient):
+        """An unreadable socket is not reported as a permission problem with the path."""
+        mock_subprocess.run.side_effect = subprocess.CalledProcessError(
+            1,
+            "cmd",
+            stderr='error: cannot communicate with server: Post "http://localhost/v1/files": '
+            'cannot stat "/pebble/.pebble.socket": stat /pebble/.pebble.socket: '
+            "permission denied",
+        )
+
+        with pytest.raises(ops.pebble.ConnectionError):
+            client.make_dir("/x")
+
+    def test_connection_error_phrase_in_daemon_message(
+        self, mock_subprocess: Mock, client: PebbleCliClient
+    ):
+        """A path that contains the phrase is still an error from the daemon."""
+        mock_subprocess.run.side_effect = subprocess.CalledProcessError(
+            1,
+            "cmd",
+            stderr="error: stat /cannot communicate with server: no such file or directory",
+        )
+
+        with pytest.raises(ops.pebble.APIError) as exc_info:
+            client._run_command(["test"])
+
+        assert exc_info.value.code == 404
 
     def test_run_command_api_error(self, mock_subprocess: Mock, client: PebbleCliClient):
         """An unclassifiable CLI error maps to a 500 with the stripped message."""
