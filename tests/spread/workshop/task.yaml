@@ -1,0 +1,25 @@
+summary: Launch and exercise the workshop development environment
+
+systems:
+  - ubuntu-24.04
+
+prepare: |
+  sudo lxd init --auto
+  sudo snap install workshop --classic
+  sudo adduser spread lxd
+  # The spread framework uploads project files as root (via sudo rsync), so
+  # all files arrive owned by uid=0. Workshop's checkOwner in copySdkDir
+  # synthesises EPERM when the SDK directory owner != the invoking user's
+  # uid. Re-chown the whole tree so the check passes for the spread user.
+  sudo chown -R spread:spread "$SPREAD_PATH"
+
+execute: |
+  pushd "$SPREAD_PATH"
+  # sg lxd activates lxd group membership without requiring a re-login
+  sg lxd -c "workshop launch dev"
+  sg lxd -c "workshop run dev unit"
+  sg lxd -c "workshop run dev lint"
+  popd
+
+restore: |
+  sg lxd -c "workshop remove dev" || true
