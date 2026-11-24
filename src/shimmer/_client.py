@@ -7,7 +7,7 @@ socket.
 
 from __future__ import annotations
 
-import fnmatch
+import http
 import io
 import json
 import os
@@ -48,6 +48,7 @@ from ops.pebble import (
     WarningState,
 )
 
+from ._glob import BadPatternError, compile_pattern
 from ._process import ExecProcess
 from ._runner import FileTransferRunner, LocalSubprocessRunner, Runner
 
@@ -115,7 +116,7 @@ class PebbleCliClient:
             )
             return result
         except subprocess.CalledProcessError as e:
-            raise self._error_from_stderr(e.stderr, e.returncode) from e
+            raise self._error_from_stderr(e.stderr, e.returncode, cmd[0]) from e
         except subprocess.TimeoutExpired as e:
             # With the default timeout this is also how an unreachable daemon
             # shows up for read commands: the CLI retries those for 5 seconds
@@ -178,7 +179,9 @@ class PebbleCliClient:
         return "".join(parts)
 
     @classmethod
-    def _error_from_stderr(cls, stderr: str | None, returncode: int) -> APIError | ConnectionError:
+    def _error_from_stderr(
+        cls, stderr: str | None, returncode: int, command: str
+    ) -> APIError | ConnectionError:
         """Build the exception ops.pebble.Client would raise, as closely as possible.
 
         A failure to reach the daemon is a ``ConnectionError``; anything the daemon
@@ -207,21 +210,42 @@ class PebbleCliClient:
         if cls._CONNECTION_ERROR.search(message):
             return ConnectionError(message)
 
-        lowered = message.lower()
-        if any(m in lowered for m in cls._NOT_FOUND_MARKERS):
-            code, status = 404, "Not Found"
-        elif any(m in lowered for m in cls._BAD_REQUEST_MARKERS):
-            code, status = 400, "Bad Request"
-        else:
-            code, status = 500, "Internal Server Error"
+        return cls._api_error(cls._infer_status(message, command), message)
 
+    @classmethod
+    def _infer_status(cls, message: str, command: str) -> http.HTTPStatus:
+        """Infer the HTTP status the daemon reported ``message`` with.
+
+        Where the daemon's handler for ``command`` only uses a known set of
+        statuses, that decides it. Otherwise it comes down to the markers above.
+        """
+        lowered = message.lower()
+        if lowered.startswith("access denied"):
+            return http.HTTPStatus.UNAUTHORIZED
+        if command == "ls":
+            # The text of an OS error always comes last, after the path.
+            if lowered.endswith("no such file or directory"):
+                return http.HTTPStatus.NOT_FOUND
+            if lowered.endswith("permission denied"):
+                return http.HTTPStatus.FORBIDDEN
+            return http.HTTPStatus.BAD_REQUEST
+        if any(m in lowered for m in cls._NOT_FOUND_MARKERS):
+            return http.HTTPStatus.NOT_FOUND
+        if any(m in lowered for m in cls._BAD_REQUEST_MARKERS):
+            return http.HTTPStatus.BAD_REQUEST
+        return http.HTTPStatus.INTERNAL_SERVER_ERROR
+
+    @staticmethod
+    def _api_error(status: http.HTTPStatus, message: str) -> APIError:
+        """Build an ``APIError`` with a body in Pebble's API wire format."""
+        code, reason = status.value, status.phrase
         body: dict[str, Any] = {
             "type": "error",
             "status-code": code,
-            "status": status,
+            "status": reason,
             "result": {"message": message},
         }
-        return APIError(body=body, code=code, status=status, message=message)
+        return APIError(body=body, code=code, status=reason, message=message)
 
     def _run_json(
         self,
@@ -495,26 +519,41 @@ class PebbleCliClient:
 
     def list_files(
         self,
-        path: str,
+        path: str | pathlib.PurePath,
         *,
         pattern: str | None = None,
         itself: bool = False,
     ) -> list[FileInfo]:
-        """List files in a directory."""
-        cmd = ["ls", path]
+        """List files in a directory.
+
+        Like ops.pebble.Client, and unlike the other file operations, this raises
+        APIError rather than PathError if the path can't be listed. (The ops
+        docstring says PathError, but ops itself relies on APIError, for example
+        in ops.Container.exists.)
+        """
+        cmd = ["ls", str(path)]
         if itself:
             cmd.append("-d")
 
-        try:
-            data = self._run_json(cmd)
-        except APIError as e:
-            self._raise_path_error(e)
-        files = [FileInfo.from_dict(entry) for entry in (data or {}).get("files", [])]
-        # ``pattern`` matches against entry names; Pebble's ls glob support only
-        # applies to the final path element, so filter here to match the
-        # ops.pebble.Client semantics exactly.
-        if pattern:
-            files = [f for f in files if fnmatch.fnmatch(f.name, pattern)]
+        data = self._run_json(cmd)
+        files = [
+            # The CLI leaves out the name of a user or group that has none, where
+            # the API has an empty string.
+            FileInfo.from_dict({"user": "", "group": "", **entry})
+            for entry in (data or {}).get("files", [])
+        ]
+        # The CLI only takes a pattern as part of the path, and then reads the path
+        # differently (it has to be a directory), so filter here to match the
+        # ops.pebble.Client semantics exactly. Like the daemon, this looks at the
+        # pattern only when there is something to match it against.
+        if pattern and files:
+            try:
+                regex = compile_pattern(pattern)
+            except BadPatternError:
+                raise self._api_error(
+                    http.HTTPStatus.BAD_REQUEST, "syntax error in pattern"
+                ) from None
+            files = [f for f in files if regex.fullmatch(f.name)]
         return files
 
     def make_dir(
