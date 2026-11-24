@@ -380,7 +380,7 @@ class TestPebbleCliClient:
 
         call_args = mock_subprocess.run.call_args[0][0]
         assert call_args[:3] == ["mock-pebble", "add", "test-layer"]
-        assert call_args[3].endswith(".yaml")
+        assert len(call_args) == 4  # ... then the path of the layer
 
     def test_add_layer_with_combine(self, mock_subprocess: Mock, client: PebbleCliClient):
         """Test adding a layer with combine option."""
@@ -1051,6 +1051,70 @@ class TestPebbleCliClient:
         remote_client.push("/etc/hosts", b"content")
 
         transfer_runner.cleanup_temp.assert_called_once_with("/remote/tmp/staged")
+
+    def test_add_layer_remote_runner(self, remote_client, transfer_runner):
+        """add_layer() via FileTransferRunner stages the layer where the CLI runs."""
+        remote_client.add_layer("label", "summary: café\n", combine=True)
+
+        transfer_runner.upload_temp.assert_called_once_with("summary: café\n".encode())
+        call_args = transfer_runner.run.call_args[0][0]
+        assert call_args == ["mock-pebble", "add", "label", "/remote/tmp/staged", "--combine"]
+        transfer_runner.cleanup_temp.assert_called_once_with("/remote/tmp/staged")
+
+    def test_add_layer_error_remote_runner_cleans_up(self, remote_client, transfer_runner):
+        """A failed add_layer via FileTransferRunner still calls cleanup_temp."""
+        transfer_runner.run.side_effect = subprocess.CalledProcessError(
+            1, "cmd", stderr='error: layer "label" already exists'
+        )
+
+        with pytest.raises(ops.pebble.APIError):
+            remote_client.add_layer("label", "")
+
+        transfer_runner.cleanup_temp.assert_called_once_with("/remote/tmp/staged")
+
+    @pytest.mark.parametrize(
+        ("op", "identities"),
+        [
+            (
+                lambda client: client.replace_identities(
+                    {"bob": {"access": "admin", "local": {"user-id": 42}}}
+                ),
+                {"bob": {"access": "admin", "local": {"user-id": 42}}},
+            ),
+            (lambda client: client.remove_identities(["bob"]), {"bob": None}),
+        ],
+    )
+    def test_identities_remote_runner(self, remote_client, transfer_runner, op, identities):
+        """Identities are staged where the CLI runs."""
+        op(remote_client)
+
+        (content,) = transfer_runner.upload_temp.call_args[0]
+        assert yaml.safe_load(content) == {"identities": identities}
+        call_args = transfer_runner.run.call_args[0][0]
+        assert call_args == [
+            "mock-pebble",
+            "update-identities",
+            "--from",
+            "/remote/tmp/staged",
+            "--replace",
+        ]
+        transfer_runner.cleanup_temp.assert_called_once_with("/remote/tmp/staged")
+
+    def test_add_layer_runner_without_transfer(self):
+        """A runner that can't transfer files gets a local file, removed afterwards."""
+        runner = Mock(spec=["run", "popen"])
+        seen = {}
+
+        def run(argv, **kwargs):
+            seen["path"] = argv[3]
+            with open(argv[3], "rb") as f:
+                seen["content"] = f.read()
+
+        runner.run.side_effect = run
+        PebbleCliClient(pebble_binary="mock-pebble", runner=runner).add_layer("label", "a: b")
+
+        assert seen["content"] == b"a: b"
+        assert not os.path.exists(seen["path"])
 
     def test_exec_simple(self, mock_subprocess: Mock, client: PebbleCliClient):
         """Test simple command execution."""

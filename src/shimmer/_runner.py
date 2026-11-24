@@ -75,8 +75,9 @@ class FileTransferRunner(Runner, Protocol):
     """Optional extension of ``Runner`` for staging files to pebble's filesystem.
 
     Implement this on remote runners (e.g. ``JujuSshRunner``) so that
-    ``PebbleCliClient.push`` and ``pull`` can stage content on the remote host
-    rather than a local temp file that the remote pebble process cannot access.
+    ``PebbleCliClient`` can stage content on the remote host rather than a local
+    temp file that the remote pebble process cannot access. ``push``, ``pull``,
+    ``add_layer``, ``replace_identities``, and ``remove_identities`` need this.
 
     ``LocalSubprocessRunner`` implements this protocol — local and remote
     filesystems are the same, so the default behaviour is preserved.
@@ -85,8 +86,8 @@ class FileTransferRunner(Runner, Protocol):
     def upload_temp(self, content: bytes) -> str:
         """Write *content* to a temp file accessible to pebble.
 
-        Returns the absolute path that pebble can use as a source (push) or
-        destination (pull).  Call ``cleanup_temp`` when the temp file is no
+        Returns the absolute path that pebble can use as a source (such as for
+        push) or destination (pull).  Call ``cleanup_temp`` when the temp file is no
         longer needed.
         """
         ...
