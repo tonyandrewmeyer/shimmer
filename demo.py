@@ -83,7 +83,7 @@ class TracingCliClient(PebbleCliClient):
     stays reproducible under ``showboat verify``.
     """
 
-    _TMP_RE = re.compile(r"/tmp/tmp[A-Za-z0-9_]+")
+    _TMP_RE = re.compile(r"/tmp/tmp[A-Za-z0-9_]+(\.yaml)?")
     _ID_RE = re.compile(r"\b(tasks|change|wait) \d+")
 
     def __init__(self, *args, **kwargs):
@@ -163,7 +163,9 @@ def run_workload(client) -> list[str]:
 
     info = client.get_system_info()
     results.append(f"system  : pebble {info.version}")
-    say(f"• system info: pebble {info.version}")
+    # The version is compared, but not shown, so that a new Pebble release doesn't
+    # change the document.
+    say("• system info: pebble <version>")
 
     svc = _find(client.get_services, "demo-server")
     results.append(f"service : {svc.name} {svc.current.value} ({svc.startup.value})")
@@ -277,9 +279,14 @@ def build_demo() -> bool:
             "note",
             "The deployed layer runs `python3 -m http.server`. That's a real "
             "process serving real traffic — here's the live response (the "
-            "volatile `Date` header is filtered so the document stays verifiable):",
+            "volatile `Date` and `Server` headers are filtered so the document stays "
+            "verifiable):",
         ),
-        ("exec", "bash", f"curl -s -i {HTTP_URL} | tr -d '\\r' | grep -vi '^date:' | head -3"),
+        (
+            "exec",
+            "bash",
+            f"curl -s -i {HTTP_URL} | tr -d '\\r' | grep -viE '^(date|server):' | head -2",
+        ),
         ("note", "## Cleanup"),
         (
             "exec",
