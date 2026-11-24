@@ -766,6 +766,62 @@ class TestPebbleCliClient:
         assert len(files) == 1
         assert files[0].name == ".pebble.txt"
 
+    @pytest.mark.parametrize(
+        ("message", "code", "status"),
+        [
+            ("stat /x: no such file or directory", 404, "Not Found"),
+            ("open /root: permission denied", 403, "Forbidden"),
+            ("stat /etc/hostname/x: not a directory", 400, "Bad Request"),
+            ('path must be absolute, got "rel"', 400, "Bad Request"),
+            # Only the end of the message says what went wrong.
+            ("stat /permission denied/x: no such file or directory", 404, "Not Found"),
+            ("stat /not found/x: not a directory", 400, "Bad Request"),
+            ("access denied (try with sudo)", 401, "Unauthorized"),
+        ],
+    )
+    def test_list_files_error(
+        self,
+        mock_subprocess: Mock,
+        client: PebbleCliClient,
+        message: str,
+        code: int,
+        status: str,
+    ):
+        """Like ops.pebble.Client, list_files raises APIError rather than PathError."""
+        mock_subprocess.run.side_effect = subprocess.CalledProcessError(
+            1, "cmd", stderr=f"error: {message}"
+        )
+
+        with pytest.raises(ops.pebble.APIError) as exc_info:
+            client.list_files("/x")
+
+        assert exc_info.value.code == code
+        assert exc_info.value.status == status
+        assert exc_info.value.message == message
+
+    def test_list_files_unnamed_owner(self, mock_subprocess: Mock, client: PebbleCliClient):
+        """A user or group without a name is an empty string, as it is in the API."""
+        mock_subprocess.run.return_value.stdout = json.dumps(
+            {
+                "files": [
+                    {
+                        "path": "/path/a",
+                        "name": "a",
+                        "type": "directory",
+                        "permissions": "755",
+                        "last-modified": "2024-02-26T12:58:31Z",
+                        "user-id": 12345,
+                        "group-id": 12345,
+                    },
+                ]
+            }
+        )
+
+        (info,) = client.list_files("/path")
+
+        assert info.user == ""
+        assert info.group == ""
+
     def test_make_dir(self, mock_subprocess: Mock, client: PebbleCliClient):
         """Test creating directory."""
         client.make_dir("/path/newdir", make_parents=True, permissions=0o755)

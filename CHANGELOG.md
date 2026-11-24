@@ -10,6 +10,18 @@ Bug fixes and packaging:
 - A command that does not finish within the client's timeout now raises an
   exception that is both a `ConnectionError` and a `TimeoutError`, matching
   `ops.pebble.Client`. Code that catches `TimeoutError` is unaffected.
+- `list_files()` now raises `APIError` rather than `PathError` when the path
+  can't be listed, with the same status as `ops.pebble.Client` (for example,
+  404 for a missing path and 403 for one that can't be read). This makes
+  `ops.Container.exists()` and `ops.Container.isdir()` return `False` for a
+  missing path, where they previously raised `PathError`.
+- `list_files()` patterns now follow Pebble's syntax rather than Python's
+  `fnmatch`: negation is `[^x]`, a backslash escapes the next character, and a
+  malformed pattern raises `APIError` with status 400 instead of matching
+  nothing.
+- `list_files()` now reports an owner that has no name as an empty string, as
+  `ops.pebble.Client` does, rather than `None`.
+- An "access denied" error from Pebble now has status 401 rather than 500.
 
 # 2026-11-02
 

@@ -14,6 +14,7 @@ shimmer and ops.pebble.Client (not a flaky test); see the reason string.
 
 from __future__ import annotations
 
+import os
 import signal
 import socket
 import time
@@ -28,6 +29,7 @@ from shimmer import PebbleCliClient
 from .conftest import (
     Twins,
     assert_parity,
+    assert_same_api_error,
     assert_same_exception,
     assert_same_outcome,
     both_results,
@@ -208,6 +210,23 @@ class TestFileParity:
         s, c = both_results(twins, lambda cl: cl.list_files("/tmp/parity_glob", pattern="*.log"))
         assert_parity(s, c)
 
+    @pytest.mark.parametrize(
+        "pattern", ["[!x]pp", "[^x]pp", "st\\*r", "*pp", "a/b", "app", "", "[z-a]pp", "?pp"]
+    )
+    def test_list_files_pattern_syntax(self, twins: Twins, tmp_path: pathlib.Path, pattern: str):
+        for name in ("app", "xpp", "!pp", "st*r", "star"):
+            (tmp_path / "ls" / name).mkdir(parents=True)
+        s, c = both_results(twins, lambda cl: cl.list_files(tmp_path / "ls", pattern=pattern))
+        assert_parity(s, c)
+
+    def test_list_files_pattern_on_file(self, twins: Twins, tmp_path: pathlib.Path):
+        (tmp_path / "app").touch()
+        for pattern in ("a*", "z*"):
+            s, c = both_results(
+                twins, lambda cl, p=pattern: cl.list_files(tmp_path / "app", pattern=p)
+            )
+            assert_parity(s, c)
+
     def test_make_dir(self, twins: Twins):
         for client in twins.both:
             client.make_dir("/tmp/parity_mkdir/sub", make_parents=True)
@@ -380,6 +399,43 @@ class TestErrorParity:
         assert isinstance(cli_exc, ops.pebble.PathError)
         assert cli_exc.kind == socket_exc.kind
         assert cli_exc.message == socket_exc.message
+
+    @pytest.mark.parametrize(
+        ("path", "pattern"),
+        [
+            ("missing", None),
+            ("file/child", None),
+            ("loop", None),
+            ("secret", None),
+            (".", "["),
+            (".", "app["),
+            (".", "a\\"),
+            (".", "[]a]"),
+        ],
+    )
+    def test_list_files_errors(
+        self, twins: Twins, tmp_path: pathlib.Path, path: str, pattern: str | None
+    ):
+        if path == "secret" and os.geteuid() == 0:
+            pytest.skip("root can list any directory")
+        (tmp_path / "file").touch()
+        (tmp_path / "loop").symlink_to("loop")
+        (tmp_path / "secret").mkdir(mode=0)
+        assert_same_api_error(
+            twins, lambda cl: cl.list_files(str(tmp_path / path), pattern=pattern)
+        )
+
+    @pytest.mark.parametrize("path", ["", "relative"])
+    def test_list_files_bad_path(self, twins: Twins, path: str):
+        assert_same_api_error(twins, lambda cl: cl.list_files(path))
+
+    def test_container_exists_and_isdir(self, twins: Twins):
+        for client in twins.both:
+            container = ops.Container("c", mock.Mock(), pebble_client=client)
+            assert container.exists("/etc")
+            assert container.isdir("/etc")
+            assert not container.exists("/nonexistent")
+            assert not container.isdir("/nonexistent")
 
     def test_remove_missing_file(self, twins: Twins):
         socket_exc, _ = assert_same_exception(

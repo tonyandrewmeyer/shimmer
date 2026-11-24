@@ -296,6 +296,21 @@ def assert_same_exception(
     return socket_exc, cli_exc
 
 
+def assert_same_api_error(twins: Twins, op: Callable[[Any], Any]) -> None:
+    """Assert both clients raise APIError with the same status and message.
+
+    Runs of whitespace in the message are treated as equal: the CLI re-flows a
+    message that has line breaks in it, and that can't be undone.
+    """
+    socket_exc, cli_exc = assert_same_exception(twins, op)
+    assert isinstance(socket_exc, ops.pebble.APIError)
+    assert isinstance(cli_exc, ops.pebble.APIError)
+    assert cli_exc.message.split() == socket_exc.message.split()
+    assert (cli_exc.code, cli_exc.status) == (socket_exc.code, socket_exc.status)
+    for key in ("type", "status-code", "status"):
+        assert cli_exc.body[key] == socket_exc.body[key]
+
+
 def assert_same_outcome(
     twins: Twins,
     op: Callable[[Any], Any],
