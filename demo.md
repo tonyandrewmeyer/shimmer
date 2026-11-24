@@ -1,7 +1,7 @@
 # Shimmer: a drop-in Pebble client over the CLI
 
-*2026-05-28T10:52:26Z by Showboat 0.6.1*
-<!-- showboat-id: f59f7e37-3f64-4983-a179-25e547500ba9 -->
+*2026-11-24T05:56:56Z by Showboat 0.6.1*
+<!-- showboat-id: e973ece2-6ba2-47d1-9dfd-d156d97cd569 -->
 
 **Shimmer** provides `PebbleCliClient`, a drop-in replacement for `ops.pebble.Client` that drives Pebble through its **CLI** instead of the unix socket — for environments where the socket isn't reachable. The contract is *parity*: same methods, same return types, same exceptions. This document proves it.
 
@@ -16,7 +16,7 @@ run_and_capture(socket_client(), '\''/tmp/shimmer-parity/socket.txt'\'')'
 
 ```output
 • deploy: add layer + replan
-• system info: pebble v1.31.0
+• system info: pebble <version>
 • service: demo-server is active (startup enabled)
 • check: demo-health level=alive
 • file round-trip: 'Hello from Shimmer!'
@@ -33,11 +33,11 @@ run_and_capture(cli_client(trace=True), '\''/tmp/shimmer-parity/cli.txt'\'')'
 
 ```output
 • deploy: add layer + replan
-    [2m$ pebble add demo /tmp/<tmp>.yaml --combine[0m
+    [2m$ pebble add demo /tmp/<tmp> --combine[0m
     [2m$ pebble replan --no-wait[0m
     [2m$ pebble tasks <id> --format json[0m
-    [2m$ pebble version --client[0m
-• system info: pebble v1.31.0
+    [2m$ pebble version --format json[0m
+• system info: pebble <version>
     [2m$ pebble services --format json[0m
 • service: demo-server is active (startup enabled)
     [2m$ pebble checks --format json[0m
@@ -65,15 +65,14 @@ PARITY: identical ✓
 
 ## The service is really running
 
-The deployed layer runs `python3 -m http.server`. That's a real process serving real traffic — here's the live response (the volatile `Date` header is filtered so the document stays verifiable):
+The deployed layer runs `python3 -m http.server`. That's a real process serving real traffic — here's the live response (the volatile `Date` and `Server` headers are filtered so the document stays verifiable):
 
 ```bash
-curl -s -i http://localhost:8080 | tr -d '\r' | grep -vi '^date:' | head -3
+curl -s -i http://localhost:8080 | tr -d '\r' | grep -viE '^(date|server):' | head -2
 ```
 
 ```output
 HTTP/1.0 200 OK
-Server: SimpleHTTP/0.6 Python/3.12.3
 Content-type: text/html; charset=utf-8
 ```
 
