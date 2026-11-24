@@ -229,6 +229,13 @@ class PebbleCliClient:
             if lowered.endswith("permission denied"):
                 return http.HTTPStatus.FORBIDDEN
             return http.HTTPStatus.BAD_REQUEST
+        if command == "add":
+            # The daemon rejects an invalid layer with a 400, whatever is wrong with
+            # it. The one other error it has is for an insert that needs "inner",
+            # which neither client can ask for.
+            if lowered.startswith("cannot insert sub-directory layer"):
+                return http.HTTPStatus.INTERNAL_SERVER_ERROR
+            return http.HTTPStatus.BAD_REQUEST
         if any(m in lowered for m in cls._NOT_FOUND_MARKERS):
             return http.HTTPStatus.NOT_FOUND
         if any(m in lowered for m in cls._BAD_REQUEST_MARKERS):

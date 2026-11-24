@@ -254,8 +254,8 @@ class TestPebbleCliClient:
                 404,
                 "stat /nonexistent/" + "a" * 60 + ": no such file or directory",
             ),
-            # A wrapped layer-validation error. Still a 500 (shimmer can't yet
-            # classify plan errors as 400), but the message must be clean.
+            # A wrapped layer-validation error. A 500 because this isn't reported by
+            # "add", where any invalid layer is a 400, but the message must be clean.
             (
                 'error: cannot parse layer YAML: cannot specify "service.name" label for\n'
                 '       opentelemetry log target "tgt1"',
@@ -765,6 +765,58 @@ class TestPebbleCliClient:
 
         assert len(files) == 1
         assert files[0].name == ".pebble.txt"
+
+    @pytest.mark.parametrize(
+        ("message", "code", "status"),
+        [
+            ('layer "a" already exists', 400, "Bad Request"),
+            ('plan must define "command" for service "a"', 400, "Bad Request"),
+            # "not found" here doesn't make it a 404.
+            (
+                'cannot parse layer YAML: cannot parse layer "a" section "services": yaml: '
+                "unmarshal errors: line 3: field bogus not found in type plan.Service",
+                400,
+                "Bad Request",
+            ),
+            (
+                "cannot insert sub-directory layer without 'inner' attribute set",
+                500,
+                "Internal Server Error",
+            ),
+            ("access denied (try with sudo)", 401, "Unauthorized"),
+        ],
+    )
+    def test_add_layer_error(
+        self,
+        mock_subprocess: Mock,
+        client: PebbleCliClient,
+        message: str,
+        code: int,
+        status: str,
+    ):
+        """The status for a rejected layer doesn't depend on the message."""
+        mock_subprocess.run.side_effect = subprocess.CalledProcessError(
+            1, "cmd", stderr=f"error: {message}"
+        )
+
+        with pytest.raises(ops.pebble.APIError) as exc_info:
+            client.add_layer("a", "")
+
+        assert exc_info.value.code == code
+        assert exc_info.value.status == status
+        assert exc_info.value.message == message
+
+    def test_add_layer_connection_error(self, mock_subprocess: Mock, client: PebbleCliClient):
+        """Failing to reach Pebble is not a problem with the layer."""
+        mock_subprocess.run.side_effect = subprocess.CalledProcessError(
+            1,
+            "cmd",
+            stderr='error: cannot communicate with server: Post "http://localhost/v1/layers": '
+            'socket "/pebble/.pebble.socket" not found',
+        )
+
+        with pytest.raises(ops.pebble.ConnectionError):
+            client.add_layer("a", "")
 
     @pytest.mark.parametrize(
         ("message", "code", "status"),
