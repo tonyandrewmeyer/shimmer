@@ -24,6 +24,9 @@ Bug fixes and packaging:
 - `add_layer()` now raises `APIError` with status 400 for any layer that Pebble
   rejects, as `ops.pebble.Client` does. Most invalid layers were reported with
   status 500, and one with an unknown key with status 404.
+- `add_layer()`, `replace_identities()`, and `remove_identities()` now work with
+  remote `Runner` implementations that implement `FileTransferRunner`.
+  Previously they wrote a local temporary file that Pebble could not read.
 - An "access denied" error from Pebble now has status 401 rather than 500.
 
 # 2026-11-02

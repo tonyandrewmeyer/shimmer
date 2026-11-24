@@ -7,6 +7,7 @@ socket.
 
 from __future__ import annotations
 
+import contextlib
 import http
 import io
 import json
@@ -54,7 +55,7 @@ from ._runner import FileTransferRunner, LocalSubprocessRunner, Runner
 
 if TYPE_CHECKING:
     import datetime
-    from collections.abc import Iterable, Mapping
+    from collections.abc import Generator, Iterable, Mapping
 
 
 class _ConnectionTimeoutError(ConnectionError, TimeoutError):
@@ -126,6 +127,26 @@ class PebbleCliClient:
             ) from e
         except FileNotFoundError as e:
             raise ConnectionError(f"Pebble binary not found: {self.pebble_binary}") from e
+
+    @contextlib.contextmanager
+    def _staged_file(self, content: bytes) -> Generator[str]:
+        """Provide the path of a temporary file the Pebble CLI can read ``content`` from.
+
+        A runner that can transfer files stages it wherever it runs the CLI.
+        Otherwise the CLI is taken to share this machine's filesystem.
+        """
+        if hasattr(self._runner, "upload_temp"):
+            runner = cast("FileTransferRunner", self._runner)
+            path = runner.upload_temp(content)
+            try:
+                yield path
+            finally:
+                runner.cleanup_temp(path)
+        else:
+            with tempfile.NamedTemporaryFile() as f:
+                f.write(content)
+                f.flush()
+                yield f.name
 
     # The CLI reports every failure to reach the daemon (missing socket, connection
     # refused, no permission on the socket) with this text, sometimes behind a
@@ -298,10 +319,8 @@ class PebbleCliClient:
         else:
             layer_yaml = str(layer)
 
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml") as f:
-            f.write(layer_yaml)
-            f.flush()
-            cmd = ["add", label, f.name]
+        with self._staged_file(layer_yaml.encode()) as layer_path:
+            cmd = ["add", label, layer_path]
             if combine:
                 cmd.append("--combine")
             self._run_command(cmd)
@@ -713,26 +732,12 @@ class PebbleCliClient:
         elif group_id is not None:
             cmd.extend(["--gid", str(group_id)])
 
-        if hasattr(self._runner, "upload_temp"):
-            runner = cast("FileTransferRunner", self._runner)
-            tmp_path = runner.upload_temp(content)
+        with self._staged_file(content) as source_path:
+            cmd.insert(1, source_path)
             try:
-                cmd.insert(1, tmp_path)
-                try:
-                    self._run_command(cmd)
-                except APIError as e:
-                    self._raise_path_error(e)
-            finally:
-                runner.cleanup_temp(tmp_path)
-        else:
-            with tempfile.NamedTemporaryFile() as tmp_file:
-                tmp_file.write(content)
-                tmp_file.flush()
-                cmd.insert(1, tmp_file.name)
-                try:
-                    self._run_command(cmd)
-                except APIError as e:
-                    self._raise_path_error(e)
+                self._run_command(cmd)
+            except APIError as e:
+                self._raise_path_error(e)
 
     # Exec I/O is str if encoding is provided (the default)
     @overload
@@ -1065,11 +1070,9 @@ class PebbleCliClient:
             else:
                 identity_data[name] = identity
 
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml") as f:
-            yaml.safe_dump({"identities": identity_data}, f)
-            f.flush()
-            cmd = ["update-identities", "--from", f.name, "--replace"]
-            self._run_command(cmd)
+        content = yaml.safe_dump({"identities": identity_data}).encode()
+        with self._staged_file(content) as identities_path:
+            self._run_command(["update-identities", "--from", identities_path, "--replace"])
 
     def remove_identities(self, identities: Iterable[str]):
         """Remove identities."""
