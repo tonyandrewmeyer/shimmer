@@ -92,8 +92,13 @@ and some streaming is buffered rather than incremental.
 
 A few methods can't fully match the socket client:
 
-- `replan_services()`, `start_services()`, `stop_services()`, and
-  `restart_services()` return the change ID only when no timeout is set.
+- `exec()` raises `ExecError` from `wait()` or `wait_output()` if Pebble can't be
+  reached, where `ops.pebble.Client` raises `ConnectionError` from `exec()`.
+- `list_files()` can't be used with a path that contains `*`, `?`, or `[`, because
+  the CLI treats it as a pattern. This also affects `ops.Container.exists()` and
+  `ops.Container.isdir()`.
+- Methods that only read take about 5 seconds to fail if Pebble can't be reached,
+  because the CLI retries for that long.
 - `notify()` supports custom notices only (Pebble's CLI only exposes
   `pebble notify` for custom notices).
 - `abort_change()` raises `NotImplementedError`: the Pebble CLI exposes no
@@ -129,14 +134,6 @@ user IDs). This requires Pebble v1.32.0 or later (which added `--format` to
 
 **`Connection error`** — confirm the daemon is up and `PEBBLE` points at its home
 directory (or pass `socket_path=`); check `pebble version`.
-
-**See the commands Shimmer runs** — enable debug logging:
-
-```python
-import logging
-
-logging.basicConfig(level=logging.DEBUG)
-```
 
 ## More
 
