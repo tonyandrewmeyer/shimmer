@@ -3,6 +3,8 @@ summary: Verify demo.md is reproducible and both clients produce identical outpu
 systems:
   - ubuntu-24.04
 
+kill-timeout: 15m
+
 execute: |
   pushd "$SPREAD_PATH"
 
@@ -11,8 +13,11 @@ execute: |
   export PEBBLE=/tmp/pebble-demo
   mkdir -p "$PEBBLE/layers"
 
-  pebble run --hold &
+  # If the script exits with Pebble still running, or still holding the output
+  # open, Spread waits for the kill-timeout and the failure is hard to find.
+  pebble run --hold >/tmp/pebble-demo.log 2>&1 &
   PEBBLE_PID=$!
+  trap 'kill "$PEBBLE_PID" 2>/dev/null || true' EXIT
 
   # Give the daemon a moment to bind its socket
   for i in $(seq 1 20); do
@@ -24,11 +29,11 @@ execute: |
   # Fails if any command exits non-zero or if any output drifts.
   uv run uvx showboat verify demo.md
 
-  kill "$PEBBLE_PID" || true
-  wait "$PEBBLE_PID" 2>/dev/null || true
-
   popd
+
+debug: |
+  cat /tmp/pebble-demo.log || true
 
 restore: |
   kill "$(cat /tmp/pebble-demo/.pebble.pid 2>/dev/null)" 2>/dev/null || true
-  rm -rf /tmp/pebble-demo /tmp/shimmer-parity /tmp/shimmer-demo
+  rm -rf /tmp/pebble-demo /tmp/pebble-demo.log /tmp/shimmer-parity /tmp/shimmer-demo
