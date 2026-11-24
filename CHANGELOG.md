@@ -21,6 +21,9 @@ Bug fixes and packaging:
   nothing.
 - `list_files()` now reports an owner that has no name as an empty string, as
   `ops.pebble.Client` does, rather than `None`.
+- `add_layer()` now raises `APIError` with status 400 for any layer that Pebble
+  rejects, as `ops.pebble.Client` does. Most invalid layers were reported with
+  status 500, and one with an unknown key with status 404.
 - An "access denied" error from Pebble now has status 401 rather than 500.
 
 # 2026-11-02

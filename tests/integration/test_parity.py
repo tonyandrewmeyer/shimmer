@@ -401,6 +401,53 @@ class TestErrorParity:
         assert cli_exc.message == socket_exc.message
 
     @pytest.mark.parametrize(
+        "layer",
+        [
+            pytest.param("services: [", id="bad YAML"),
+            pytest.param(
+                "services: {a: {override: replace, command: x, bogus: 1}}", id="unknown key"
+            ),
+            pytest.param("services: {a: {command: x}}", id="no override"),
+            pytest.param("services: {a: {override: replace}}", id="no command"),
+            pytest.param("services: {a: }", id="null service"),
+            pytest.param("services: {pebble: {override: replace, command: x}}", id="reserved"),
+            pytest.param(
+                "services: {a: {override: replace, command: x, on-failure: y}}",
+                id="bad on-failure",
+            ),
+            pytest.param(
+                "services: {a: {override: replace, command: x, requires: [nope]}}",
+                id="unknown dependency",
+            ),
+            pytest.param(
+                "services: {a: {override: replace, command: x, after: [b]},"
+                " b: {override: replace, command: x, after: [a]}}",
+                id="loop",
+            ),
+            pytest.param(
+                "checks: {a: {override: replace, http: {url: 'http://x'}, period: 0s}}",
+                id="zero period",
+            ),
+            pytest.param(
+                "log-targets: {a: {override: replace, type: loki, location: x, services: [nope]}}",
+                id="unknown log service",
+            ),
+        ],
+    )
+    def test_add_invalid_layer(self, twins: Twins, layer: str):
+        assert_same_api_error(twins, lambda cl: cl.add_layer("invalid", layer))
+
+    def test_add_layer_bad_label(self, twins: Twins):
+        for label in ("", "pebble-reserved", "test"):
+            assert_same_api_error(twins, lambda cl, lb=label: cl.add_layer(lb, EXTRA_LAYER))
+
+    def test_add_layer_needs_inner(self, twins: Twins):
+        for client in twins.both:
+            client.add_layer("sub/a", "")
+            client.add_layer("other", "")
+        assert_same_api_error(twins, lambda cl: cl.add_layer("sub/b", ""))
+
+    @pytest.mark.parametrize(
         ("path", "pattern"),
         [
             ("missing", None),
