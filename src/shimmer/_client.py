@@ -12,6 +12,7 @@ import io
 import json
 import os
 import pathlib
+import re
 import signal
 import subprocess
 import tempfile
@@ -53,6 +54,15 @@ from ._runner import FileTransferRunner, LocalSubprocessRunner, Runner
 if TYPE_CHECKING:
     import datetime
     from collections.abc import Iterable, Mapping
+
+
+class _ConnectionTimeoutError(ConnectionError, TimeoutError):
+    """Raised when a CLI command does not finish within the client's timeout.
+
+    ops.pebble.Client raises a ConnectionError that is also a built-in
+    TimeoutError when a request times out, so code that handles either one (such
+    as ops.Container.can_connect) keeps working.
+    """
 
 
 class PebbleCliClient:
@@ -105,11 +115,23 @@ class PebbleCliClient:
             )
             return result
         except subprocess.CalledProcessError as e:
-            raise self._api_error_from_stderr(e.stderr, e.returncode) from e
+            raise self._error_from_stderr(e.stderr, e.returncode) from e
         except subprocess.TimeoutExpired as e:
-            raise TimeoutError(f"Command {full_cmd} timed out") from e
+            # With the default timeout this is also how an unreachable daemon
+            # shows up for read commands: the CLI retries those for 5 seconds
+            # before it reports that it cannot connect.
+            raise _ConnectionTimeoutError(
+                f"Command {full_cmd} timed out (is Pebble running?)"
+            ) from e
         except FileNotFoundError as e:
             raise ConnectionError(f"Pebble binary not found: {self.pebble_binary}") from e
+
+    # The CLI reports every failure to reach the daemon (missing socket, connection
+    # refused, no permission on the socket) with this text, sometimes behind a
+    # prefix such as "cannot obtain system details: ". The HTTP method that follows
+    # is part of the match so that a path or name that happens to contain the
+    # phrase isn't mistaken for a connection failure.
+    _CONNECTION_ERROR = re.compile(r'cannot communicate with server: [A-Z][a-z]+ "')
 
     # Substrings used to recover the HTTP status the *socket* client would have
     # surfaced. The CLI only prints ``error: <message>`` and exits non-zero, so
@@ -156,8 +178,11 @@ class PebbleCliClient:
         return "".join(parts)
 
     @classmethod
-    def _api_error_from_stderr(cls, stderr: str | None, returncode: int) -> APIError:
-        """Build an ``APIError`` mirroring ops.pebble.Client as closely as possible.
+    def _error_from_stderr(cls, stderr: str | None, returncode: int) -> APIError | ConnectionError:
+        """Build the exception ops.pebble.Client would raise, as closely as possible.
+
+        A failure to reach the daemon is a ``ConnectionError``; anything the daemon
+        itself reported is an ``APIError``.
 
         The Pebble CLI reports daemon errors as ``error: <message>`` on stderr
         and exits non-zero, without exposing the HTTP status the socket client
@@ -176,6 +201,11 @@ class PebbleCliClient:
             message = cls._unwrap(message[6:].strip())
         if not message:
             message = f"pebble CLI exited with code {returncode}"
+
+        # Checked before the status is inferred: "socket ... not found" would
+        # otherwise be taken for a 404 from the daemon.
+        if cls._CONNECTION_ERROR.search(message):
+            return ConnectionError(message)
 
         lowered = message.lower()
         if any(m in lowered for m in cls._NOT_FOUND_MARKERS):
